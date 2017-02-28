@@ -1,0 +1,5 @@
+name, threads, steps, time, expected, real/expected, cpu/expected, user/cpu, system/cpu
+"std::mutex single-threaded",1,104921438,5.00308e+09,46.4138,1.02737,1.01442,0.991903,0.00809717
+"ttas_mutex single-threaded",1,107389886,5.00168e+09,46.4138,1.00347,0.997117,0.993964,0.00603622
+"trial_mutex single-threaded",1,105756790,5.00078e+09,46.4138,1.01879,1.01455,0.995984,0.00401606
+"std::mutex no contention",8,147910426,5.002e+09,32.2893,1.04734,6.627,0.994629,0.00537125
