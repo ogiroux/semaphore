@@ -78,8 +78,8 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     template < class Rep, class Period>
     timespec __semaphore_to_timespec(std::chrono::duration<Rep, Period> const& delta) {
         struct timespec ts;
-        ts.tv_sec = static_cast<long>(std::chrono::duration_cast<chrono::seconds>(delta).count());
-        ts.tv_nsec = static_cast<long>(std::chrono::duration_cast<chrono::nanoseconds>(delta).count());
+        ts.tv_sec = static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(delta).count());
+        ts.tv_nsec = static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count());
         return ts;
     }
     typedef sem_t __semaphore_sem_t;
@@ -562,7 +562,7 @@ namespace std {
                     while (value > 0)  // would it still stay positive?
                         if (__backbuffer.compare_exchange_weak(value, value - 2, std::memory_order_relaxed, std::memory_order_relaxed)) { // conserve buffer.
                             auto const result = __semaphore_sem_post(__semaphore, 1);
-                            assert(result == 0);
+                            assert(result);
                             break;
                         }
 #endif
