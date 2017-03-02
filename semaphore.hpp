@@ -33,9 +33,37 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <chrono>
 #include <thread>
 #include <cassert>
+#include <algorithm>
+
+#if defined(__GNUC__)
+    #define __semaphore_expect __builtin_expect
+#else
+    #define __semaphore_expect(c,e) (c)
+#endif
 
 #ifdef WIN32
     #include <windows.h>
+    typedef HANDLE __semaphore_sem_t;
+    inline bool __semaphore_sem_init(__semaphore_sem_t& sem, int init) { 
+        return (sem = CreateSemaphore(NULL, 0, INT_MAX, NULL)) != (HANDLE)ERROR_INVALID_HANDLE; 
+    }
+    inline bool __semaphore_sem_destroy(__semaphore_sem_t& sem) { 
+        return CloseHandle(sem) == TRUE; 
+    }
+    inline bool __semaphore_sem_post(__semaphore_sem_t& sem, int inc) { 
+        assert(inc > 0);
+        return ReleaseSemaphore(sem, inc, NULL) == TRUE; 
+    }
+    inline bool __semaphore_sem_wait(__semaphore_sem_t& sem) { 
+        return WaitForSingleObject(__semaphore, INFINITE) == WAIT_OBJECT_0;
+    }
+    template < class Rep, class Period>
+    inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
+        return WaitForSingleObject(__semaphore, std::chrono::milliseconds(delta).count()) == WAIT_OBJECT_0;
+    }
+    #if _WIN32_WINNT >= 0x0602
+        #define __semaphore_fast_path
+    #endif
 #endif //WIN32
 
 #ifdef __linux__
@@ -46,7 +74,65 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     #include <sys/syscall.h>
     #include <sys/types.h>
     #include <climits>
-#endif //__linux__
+    #include <semaphore.h>
+    template < class Rep, class Period>
+    timespec __semaphore_to_timespec(std::chrono::duration<Rep, Period> const& delta) {
+        struct timespec ts;
+        ts.tv_sec = static_cast<long>(std::chrono::duration_cast<chrono::seconds>(delta).count());
+        ts.tv_nsec = static_cast<long>(std::chrono::duration_cast<chrono::nanoseconds>(delta).count());
+        return ts;
+    }
+    typedef sem_t __semaphore_sem_t;
+    inline bool __semaphore_sem_init(__semaphore_sem_t& sem, int init) { 
+        return sem_init(&sem, 0, init) == 0; 
+    }
+    inline bool __semaphore_sem_destroy(__semaphore_sem_t& sem) { 
+        return sem_destroy(&sem) == 0; 
+    }
+    inline bool __semaphore_sem_post(__semaphore_sem_t& sem, int inc) { 
+        assert(inc == 1);
+        return sem_post(&sem) == 0; 
+    }
+    inline bool __semaphore_sem_wait(__semaphore_sem_t& sem) { 
+        return sem_wait(&sem) == 0;
+    }
+    template < class Rep, class Period>
+    inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
+        auto const timespec = __semaphore_to_timespec(delta);
+        return sem_timedwait(&sem, &timespec) == 0;
+    }
+    inline void __semaphore_yield() { 
+        sched_yield(); 
+    }
+    #define __semaphore_fast_path
+#else
+    inline void __semaphore_yield() { 
+        std::this_thread::yield(); 
+    }
+#endif
+
+#ifdef __APPLE__
+    #include <dispatch/dispatch.h>
+    typedef dispatch_semaphore_t __semaphore_sem_t;
+    inline bool __semaphore_sem_init(__semaphore_sem_t& sem, int init) { 
+        return (sem = dispatch_semaphore_create(init)) != NULL; 
+    }
+    inline bool __semaphore_sem_destroy(__semaphore_sem_t& sem) { 
+        dispatch_release(sem); 
+        return sem != NULL; 
+    }
+    inline bool __semaphore_sem_post(__semaphore_sem_t& sem, int inc) { 
+        assert(inc == 1);
+        return dispatch_semaphore_signal(sem) == 0; 
+    }
+    inline bool __semaphore_sem_wait(__semaphore_sem_t& sem) { 
+        return dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER) == 0;
+    }
+    template < class Rep, class Period>
+    inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
+        return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, std::chrono::nanoseconds(delta).count())) == 0;
+    }
+#endif
 
 namespace std {
     namespace experimental {
@@ -57,33 +143,6 @@ namespace std {
                                                   chrono::steady_clock>::type;
 
             using __semaphore_duration = chrono::microseconds;
-
-#ifdef __linux__
-    inline void __semaphore_yield() { sched_yield(); }
-#else
-    inline void __semaphore_yield() { this_thread::yield(); }
-#endif
-
-#if defined(__GNUC__)
-    #define __semaphore_expect __builtin_expect
-#else
-    #define __semaphore_expect(c,e) (c)
-#endif
-
-#ifdef __linux__
-    template < class Rep, class Period>
-    timespec __semaphore_to_timespec(chrono::duration<Rep, Period> const& delta) {
-        struct timespec ts;
-        ts.tv_sec = static_cast<long>(chrono::duration_cast<chrono::seconds>(delta).count());
-        ts.tv_nsec = static_cast<long>(chrono::duration_cast<chrono::nanoseconds>(delta).count());
-        return ts;
-    }
-    #define __semaphore_fast_path
-#endif
-
-#if defined(WIN32) && _WIN32_WINNT >= 0x0602
-    #define __semaphore_fast_path
-#endif
 
             // A simple exponential back-off helper that is designed to cover the space between (1<<__magic_number_3) and __magic_number_4
             class __semaphore_exponential_backoff {
@@ -252,7 +311,6 @@ namespace std {
                 static constexpr __base_t __bias = max + 1;
                 static constexpr __base_t min = -__bias;
 
-#ifdef __semaphore_fast_path
                 template<class Pred>
                 bool __fetch_sub_if_slow(Pred pred, __base_t term, __base_t old, memory_order order) noexcept {
 
@@ -266,7 +324,7 @@ namespace std {
 
                     return false;
                 }
-#endif
+
                 template<class Pred>
                 bool __fetch_sub_if(Pred pred, __base_t term, memory_order order) noexcept {
 
@@ -309,7 +367,7 @@ namespace std {
                     if (__semaphore_expect(!success, 0))
                         __fetch_add_slow(term, old, order, notify);
 #else
-                    old = atom.fetch_add(term, order);
+                    __base_t old = atom.fetch_add(term, order);
 #endif
 
 #ifdef __semaphore_arm
@@ -385,6 +443,8 @@ namespace std {
 #ifdef __semaphore_fast_path
                     while (old & __lockmask)
                         old = atom.load(memory_order_relaxed);
+#else
+                    ;
 #endif
                 }
 
@@ -425,7 +485,8 @@ namespace std {
                 template <class Rep, class Period>
                 bool acquire_for(chrono::duration<Rep, Period> const& rel_time, __base_t term = 1, memory_order order = memory_order_seq_cst) {
 
-                    if (__semaphore_expect(__test_and_set(order), 0))
+                    auto const pred = [=](__base_t value) -> bool { return value >= term; };
+                    if (__semaphore_expect(__fetch_sub_if(pred, term, order), 1))
                         return true;
                     else
                         return acquire_until(__semaphore_clock::now() + rel_time, order);
@@ -441,45 +502,6 @@ namespace std {
                 atomic<__base_t> atom{ __base_t() };
 
             };
-
-
-
-/*
-
-implementations:
-* time backoff (binary semaphore Mac)
-* futex / Win8+ (binary/counting semaphore Linux/Win8+)
-* pthread_sem / Win8+ (counting semaphore Mac/Win7-)
-
-
-release(mo = sc) or release(no = 1, mo = sc)
-acquire(mo = sc)
-acquire_until(at, mo = sc)
-acquire_for(rt, mo = sc)
-
-// notify/wait may be less efficient (contention management out-of-line) and not destructor-safe.
-
-atomic_notify(a)
-atomic_wait(a, old)
-
-*/
-
-/*
-typedef LONG NTSTATUS;
-
-typedef NTSTATUS(NTAPI *_NtQuerySemaphore)(
-    HANDLE SemaphoreHandle,
-    DWORD SemaphoreInformationClass, // Would be SEMAPHORE_INFORMATION_CLASS
-    PVOID SemaphoreInformation,      // but this is to much to dump here
-    ULONG SemaphoreInformationLength,
-    PULONG ReturnLength OPTIONAL
-    );
-
-typedef struct _SEMAPHORE_BASIC_INFORMATION {
-    ULONG CurrentCount;
-    ULONG MaximumCount;
-} SEMAPHORE_BASIC_INFORMATION;
-*/
 
             struct buffered_semaphore {
 
@@ -497,13 +519,12 @@ typedef struct _SEMAPHORE_BASIC_INFORMATION {
                             break;
                     }
                     if (old >> 1 < 0) { // was it depleted?
-                        auto const inc = min(-(old >> 1), term);
-#ifdef WIN32
-                        auto const result = ReleaseSemaphore(__semaphore, inc, NULL) == TRUE;
-#else
+                        auto inc = (std::min)(-(old >> 1), term);
+#ifndef WIN32
                         __backbuffer.fetch_add(inc - 1);
-                        auto const result = sem_post(&__semaphore) == 0;
+                        inc = 1;
 #endif
+                        auto const result = __semaphore_sem_post(__semaphore, inc);
                         assert(result);
                     }
                     __frontbuffer.fetch_sub(1);
@@ -535,51 +556,41 @@ typedef struct _SEMAPHORE_BASIC_INFORMATION {
                     }
                 }
 
+                inline void __backfill() {
+#ifndef WIN32
+                    int value = __backbuffer.load(std::memory_order_relaxed);
+                    while (value > 0)  // would it still stay positive?
+                        if (__backbuffer.compare_exchange_weak(value, value - 2, std::memory_order_relaxed, std::memory_order_relaxed)) { // conserve buffer.
+                            auto const result = __semaphore_sem_post(__semaphore, 1);
+                            assert(result == 0);
+                            break;
+                        }
+#endif
+                }
+
                 inline void acquire(std::memory_order order = std::memory_order_seq_cst) noexcept {
 
                     __wait_fast();
                     if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
                         return;
-#ifdef WIN32
-                    auto const result = WaitForSingleObject(__semaphore, INFINITE);
-                    assert(result == WAIT_OBJECT_0);
-#else
-                    auto const result = sem_wait(&__semaphore);
-                    assert(result == 0);
-                    int value = __backbuffer.load(std::memory_order_relaxed);
-                    while (value > 0)  // would it still stay positive?
-                        if (__backbuffer.compare_exchange_weak(value, value - 1, order, std::memory_order_relaxed)) { // conserve buffer.
-                            auto const result = sem_post(&__semaphore);
-                            assert(result == 0);
-                            break;
-                        }
-#endif
+                    auto const result = __semaphore_sem_wait(__semaphore);
+                    __backfill();
+                    assert(result);
                 }
                 template <class Rep, class Period>
                 bool acquire_for(std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order = std::memory_order_seq_cst) {
 
                     __wait_fast();
                     if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
-                        return;
-#ifdef WIN32
-                    auto const result = WaitForSingleObject(__semaphore, std::chrono::milliseconds(rel_time).count()) == WAIT_OBJECT_0;
-#else
-                    auto const timespec __semaphore_to_timespec(rel_time);
-                    auto const result = sem_timedwait(&__semaphore, &timespec) == 0;
-                    int value = __backbuffer.load(std::memory_order_relaxed);
-                    while (value > 0)  // would it still stay positive?
-                        if (__backbuffer.compare_exchange_weak(value, value - 1, order, std::memory_order_relaxed)) { // conserve buffer.
-                            auto const result = sem_post(&__semaphore);
-                            assert(result == 0);
-                            break;
-                        }
-#endif
+                        return true;
+                    auto const result = __semaphore_sem_wait_timed(__semaphore, rel_time);
+                    __backfill();
                     return result;
                 }
                 template <class Clock, class Duration>
                 bool acquire_until(std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order = std::memory_order_seq_cst) {
         
-                    return acquire_for(abs_time - Clock::now(), term, order);
+                    return acquire_for(abs_time - Clock::now(), order);
                 }
 
                 buffered_semaphore(int initial = 0) noexcept 
@@ -589,37 +600,26 @@ typedef struct _SEMAPHORE_BASIC_INFORMATION {
 #endif
                 {
                     assert(initial >= 0 && initial <= max_limit);
-#ifdef WIN32
-                    __semaphore = CreateSemaphore(NULL, 0, max_limit, NULL);
-                    assert(__semaphore != (HANDLE)ERROR_INVALID_HANDLE);
-#else
-                    auto result = sem_init(&__semaphore, 0, 0);
-                    assert(result == 0);
-#endif
+
+                    auto const result = __semaphore_sem_init(__semaphore, initial);
+                    assert(result);
                 }
                 ~buffered_semaphore() {
 
                     while (__frontbuffer.load(std::memory_order_acquire) & 1)
                         ;
-#ifdef WIN32
-                    CloseHandle(__semaphore);
-#else
-                    auto const result = sem_destroy(&__semaphore);
-                    assert(result == 0);
-#endif
+                    auto const result = __semaphore_sem_destroy(__semaphore);
+                    assert(result);
                 }
                 buffered_semaphore(const buffered_semaphore&) = delete;
                 buffered_semaphore& operator=(const buffered_semaphore&) = delete;
 
             private:
-
-#ifdef WIN32
-                 HANDLE          __semaphore;
-#else
-                sem_t            __semaphore;
+                std::atomic<int> __frontbuffer;
+#ifndef WIN32
                 std::atomic<int> __backbuffer;
 #endif
-                std::atomic<int> __frontbuffer;
+                __semaphore_sem_t __semaphore;
             };
 
             //typedef __counting_semaphore counting_semaphore;

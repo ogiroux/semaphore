@@ -146,7 +146,7 @@ void atomic_notify(std::atomic<T>& a) {
 template <class T, class V>
 void atomic_wait(std::atomic<T> const& a, V oldval, std::memory_order order = std::memory_order_seq_cst) {
 
-    for (int i = 0; i < 128; ++i, std::experimental::__semaphore_yield())
+    for (int i = 0; i < 128; ++i, __semaphore_yield())
         if (__semaphore_expect(a.load(order) != oldval, 1))
             return;
     auto& w = __atomic_wait_table[((uintptr_t)&a / sizeof(__atomic_wait)) & 0xF];
