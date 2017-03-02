@@ -1,2 +1,16 @@
 
 test
+*.suo
+semaphore/Debug/semaphore.exe
+*.ilk
+semaphore/Debug/semaphore.log
+*.obj
+*.tlog
+*.idb
+*.pdb
+*.exe
+*.log
+*.ipdb
+*.iobj
+semaphore/semaphore.VC.db
+*.csv

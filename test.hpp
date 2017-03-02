@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2014, NVIDIA Corporation
+Copyright (c) 2017, NVIDIA Corporation
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -108,94 +108,103 @@ private:
 
 struct latch {
     latch() = delete;
-    latch(int c) : a(c) { }
+    latch(int c) : a{ c }, c{ c } { }
     latch(const latch&) = delete;
     latch& operator=(const latch&) = delete;
     void arrive() { 
-        if (a.fetch_add(-1) == 1) 
-            f.release();
+        if (a.fetch_sub(1) == 1)
+            f.release(c, std::memory_order_release);
     }
     void wait() { 
-        f.acquire();
+        f.acquire(std::memory_order_acquire);
     }
 private:
-    std::atomic<int> a;
-    std::experimental::binary_semaphore f;
+    alignas(64) std::experimental::counting_semaphore f{ 0 };
+    alignas(64) std::atomic<int>                      a{ 0 };
+    int const                                         c;
 };
-/*
-struct barrier {
-    barrier() = delete;
-    barrier(int c) : o(c) { }
-    barrier(const barrier&) = delete;
-    barrier& operator=(const barrier&) = delete;
-    void arrive_and_wait() { 
-        auto const epoch = f.test();
-        if (a.fetch_add(1) == o - 1) {
-            a.store(0);
-            f.set(!epoch);
-        }
-        else
-            f.acquire(!epoch);
-    }
-private:
-    int const o;
-    std::atomic<int> a{0};
-    std::experimental::binary_semaphore f;
-};
-*/
-template <class T, class V>
-void atomic_notify(std::experimental::binary_semaphore& s,
-                   std::atomic<bool>& f,
-                   std::atomic<T>& a, 
-                   V newval, 
-                   std::memory_order order = std::memory_order_seq_cst, //this implementation can't actually make use of this operand
-                   std::experimental::atomic_notify notify = std::experimental::atomic_notify::all) {
 
-    a.store(newval); //requires sc
-    if (__semaphore_expect(f.load(),0)) { //requires sc
-        f.store(false, std::memory_order_relaxed);
-        s.release(std::memory_order_release, notify);
-    }
-}
+struct __atomic_wait {
 
-template <class T, class V>
-void atomic_wait(std::experimental::binary_semaphore& s,
-                 std::atomic<bool>& f,
-                 std::atomic<T> const& a, 
-                 V current, 
-                 std::memory_order order = std::memory_order_seq_cst) {
+    alignas(64) std::atomic<int>                      f{ 0 };
+    alignas(64) std::experimental::counting_semaphore s{ 0 };
 
-    if (__semaphore_expect(a.load(order) == current, 1))
+} __atomic_wait_table[0xF];
+
+template <class T>
+void atomic_notify(std::atomic<T>& a) {
+
+    auto& w = __atomic_wait_table[((uintptr_t)&a / sizeof(__atomic_wait)) & 0xF];
+    if (__semaphore_expect(!w.f.load(std::memory_order_relaxed), 1))
         return;
-    for (int i = 0; i < 32; ++i, std::experimental::__semaphore_yield())
-        if (a.load(order) != current)
-            return;
-    while (1) {
-        f.store(true, std::memory_order_relaxed);
-        s.acquire(std::memory_order_seq_cst, std::experimental::atomic_notify::none); //requires sc
-        if (a.load() != current) //requires sc
-            return;
-    }
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    int const waiting = w.f.exchange(0, std::memory_order_relaxed);
+    if (__semaphore_expect(waiting, 0))
+        w.s.release(waiting, std::memory_order_release);
 }
 
-struct alignas(64) binary_semaphore_lock2 {
+template <class T, class V>
+void atomic_wait(std::atomic<T> const& a, V oldval, std::memory_order order = std::memory_order_seq_cst) {
+
+    for (int i = 0; i < 128; ++i, std::experimental::__semaphore_yield())
+        if (__semaphore_expect(a.load(order) != oldval, 1))
+            return;
+    auto& w = __atomic_wait_table[((uintptr_t)&a / sizeof(__atomic_wait)) & 0xF];
+    do {
+        w.f.fetch_add(1, std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        if (__semaphore_expect(a.load(order) != oldval, 0)) {
+            int const waiting = w.f.exchange(0, std::memory_order_relaxed);
+            switch (waiting) {
+            case 0:  w.s.acquire(std::memory_order_relaxed);
+            case 1:  break;
+            default: w.s.release(waiting - 1, std::memory_order_relaxed);
+            }
+            return;
+        }
+        w.s.acquire(std::memory_order_acquire);
+    } while (a.load(order) != oldval);
+}
+
+struct binary_semaphore_lock2 {
 
     void lock() {
 
-        int old = 0;
-        while (!i.compare_exchange_strong(old, 1, std::memory_order_acquire)) {
-            atomic_wait(s, f, i, old, std::memory_order_relaxed);
-            old = 0;
+        bool old = false;
+        while (!f.compare_exchange_strong(old, true, std::memory_order_acquire)) {
+            atomic_wait(f, old, std::memory_order_relaxed);
+            old = false;
         }
     }
 
     void unlock() {
 
-        atomic_notify(s, f, i, 0, std::memory_order_release);
+        f.store(false, std::memory_order_release);
+        atomic_notify(f);
     }
 
 private:
-    std::atomic<int> i{0};
-    std::atomic<bool> f{false};
-    std::experimental::binary_semaphore s;
+    alignas(64) std::atomic<bool> f{ 0 };
+};
+
+// 2 cache lines
+struct barrier {
+    barrier() = delete;
+    barrier(int c) : o(c) { }
+    barrier(const barrier&) = delete;
+    barrier& operator=(const barrier&) = delete;
+    void arrive_and_wait() {
+        auto const p = e.load(std::memory_order_relaxed);
+        if (a.fetch_add(1, std::memory_order_acq_rel) == o - 1) {
+            a.store(0, std::memory_order_relaxed);
+            e.store(p + 1, std::memory_order_release);
+            atomic_notify(e);
+        }
+        else
+            atomic_wait(e, p, std::memory_order_acquire);
+    }
+private:
+    alignas(64) std::atomic<int> a{ 0 };
+    alignas(64) std::atomic<int> e{ 0 };
+    int const                    o;
 };
