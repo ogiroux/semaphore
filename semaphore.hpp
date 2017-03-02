@@ -26,8 +26,8 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef binary_semaphore_HPP
-#define binary_semaphore_HPP
+#ifndef binary_semaphore_hpp
+#define binary_semaphore_hpp
 
 #include <atomic>
 #include <chrono>
@@ -55,11 +55,11 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
         return ReleaseSemaphore(sem, inc, NULL) == TRUE; 
     }
     inline bool __semaphore_sem_wait(__semaphore_sem_t& sem) { 
-        return WaitForSingleObject(__semaphore, INFINITE) == WAIT_OBJECT_0;
+        return WaitForSingleObject(sem, INFINITE) == WAIT_OBJECT_0;
     }
     template < class Rep, class Period>
     inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
-        return WaitForSingleObject(__semaphore, std::chrono::milliseconds(delta).count()) == WAIT_OBJECT_0;
+        return WaitForSingleObject(sem, std::chrono::milliseconds(delta).count()) == WAIT_OBJECT_0;
     }
     #if _WIN32_WINNT >= 0x0602
         #define __semaphore_fast_path
@@ -105,6 +105,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
         sched_yield(); 
     }
     #define __semaphore_fast_path
+    #define __semaphore_back_buffered
 #else
     inline void __semaphore_yield() { 
         std::this_thread::yield(); 
@@ -132,6 +133,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
         return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, std::chrono::nanoseconds(delta).count())) == 0;
     }
+    #define __semaphore_back_buffered
 #endif
 
 namespace std {
@@ -520,7 +522,7 @@ namespace std {
                     }
                     if (old >> 1 < 0) { // was it depleted?
                         auto inc = (std::min)(-(old >> 1), term);
-#ifndef WIN32
+#ifdef __semaphore_back_buffered
                         __backbuffer.fetch_add(inc - 1);
                         inc = 1;
 #endif
@@ -532,7 +534,7 @@ namespace std {
 
                 inline void __wait_fast() noexcept {
 
-                    if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) >> 1 > 0, 1))
+                    if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
                         return;
 #ifdef __semaphore_arm
                     for (int i = 0; i < 4; ++i) {
@@ -545,26 +547,27 @@ namespace std {
                             "nop.w\n"
                             : "=&r" (old) : "r" (&atom), "r" (tmp) : "cc"
                         );
-                        if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) >> 1 > 0, 1))
+                        if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
                             return;
                     }
 #endif
                     for (int i = 0; i < 32; ++i) {
                         __semaphore_yield();
-                        if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) >> 1 > 0, 1))
+                        if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
                             return;
                     }
                 }
 
                 inline void __backfill() {
-#ifndef WIN32
-                    int value = __backbuffer.load(std::memory_order_relaxed);
-                    while (value > 0)  // would it still stay positive?
-                        if (__backbuffer.compare_exchange_weak(value, value - 2, std::memory_order_relaxed, std::memory_order_relaxed)) { // conserve buffer.
-                            auto const result = __semaphore_sem_post(__semaphore, 1);
-                            assert(result);
-                            break;
-                        }
+#ifdef __semaphore_back_buffered
+                    if (__semaphore_expect(__backbuffer.load(std::memory_order_relaxed) == 0, 1))
+                        return;
+                    if (__semaphore_expect(__backbuffer.fetch_sub(1, std::memory_order_relaxed) == 0,0)) {
+                        __backbuffer.fetch_add(1, std::memory_order_relaxed); // put back
+                        return;
+                    }
+                    auto const result = __semaphore_sem_post(__semaphore, 1);
+                    assert(result);
 #endif
                 }
 
@@ -574,8 +577,8 @@ namespace std {
                     if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
                         return;
                     auto const result = __semaphore_sem_wait(__semaphore);
-                    __backfill();
                     assert(result);
+                    __backfill();
                 }
                 template <class Rep, class Period>
                 bool acquire_for(std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order = std::memory_order_seq_cst) {
@@ -584,7 +587,8 @@ namespace std {
                     if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
                         return true;
                     auto const result = __semaphore_sem_wait_timed(__semaphore, rel_time);
-                    __backfill();
+                    if(result)
+                        __backfill();
                     return result;
                 }
                 template <class Clock, class Duration>
@@ -595,7 +599,7 @@ namespace std {
 
                 buffered_semaphore(int initial = 0) noexcept 
                     : __frontbuffer{ initial << 1 }
-#ifndef WIN32
+#ifdef __semaphore_back_buffered
                     , __backbuffer{ 0 } 
 #endif
                 {
@@ -616,7 +620,7 @@ namespace std {
 
             private:
                 std::atomic<int> __frontbuffer;
-#ifndef WIN32
+#ifdef __semaphore_back_buffered
                 std::atomic<int> __backbuffer;
 #endif
                 __semaphore_sem_t __semaphore;
@@ -671,4 +675,4 @@ namespace std {
     } // namespace experimental
 } // namespace std
 
-#endif //binary_semaphore_HPP
+#endif //binary_semaphore_hpp

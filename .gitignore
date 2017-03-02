@@ -14,3 +14,4 @@ semaphore/Debug/semaphore.log
 *.iobj
 semaphore/semaphore.VC.db
 *.csv
+*.opendb
