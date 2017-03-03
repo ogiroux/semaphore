@@ -45,7 +45,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     #include <windows.h>
     typedef HANDLE __semaphore_sem_t;
     inline bool __semaphore_sem_init(__semaphore_sem_t& sem, int init) { 
-        return (sem = CreateSemaphore(NULL, 0, INT_MAX, NULL)) != (HANDLE)ERROR_INVALID_HANDLE; 
+        return (sem = CreateSemaphore(NULL, init, INT_MAX, NULL)) != (HANDLE)ERROR_INVALID_HANDLE; 
     }
     inline bool __semaphore_sem_destroy(__semaphore_sem_t& sem) { 
         return CloseHandle(sem) == TRUE; 
@@ -119,19 +119,21 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
         return (sem = dispatch_semaphore_create(init)) != NULL; 
     }
     inline bool __semaphore_sem_destroy(__semaphore_sem_t& sem) { 
+        assert(sem != NULL);
         dispatch_release(sem); 
-        return sem != NULL; 
+        return true;
     }
     inline bool __semaphore_sem_post(__semaphore_sem_t& sem, int inc) { 
         assert(inc == 1);
-        return dispatch_semaphore_signal(sem) == 0; 
+        dispatch_semaphore_signal(sem);
+        return true;
     }
     inline bool __semaphore_sem_wait(__semaphore_sem_t& sem) { 
         return dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER) == 0;
     }
     template < class Rep, class Period>
     inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
-        return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, std::chrono::nanoseconds(delta).count())) == 0;
+        return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count())) == 0;
     }
     #define __semaphore_back_buffered
 #endif
