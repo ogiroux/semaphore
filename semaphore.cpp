@@ -255,6 +255,8 @@ namespace std {
 
 #endif                
 
+            __atomic_wait_table_entry __atomic_wait_table[__atomic_wait_table_size];
+
         } // namespace concurrency_v2
     } // namespace experimental
 } // namespace std

@@ -600,7 +600,8 @@ namespace std {
                 }
 
                 buffered_semaphore(int initial = 0) noexcept 
-                    : __frontbuffer{ initial << 1 }
+                    : __reversebuffer{ 0 }
+                    , __frontbuffer{ initial << 1 }
 #ifdef __semaphore_back_buffered
                     , __backbuffer{ 0 } 
 #endif
@@ -621,56 +622,165 @@ namespace std {
                 buffered_semaphore& operator=(const buffered_semaphore&) = delete;
 
             private:
+                __semaphore_sem_t __semaphore;
+                std::atomic<int> __reversebuffer;
                 std::atomic<int> __frontbuffer;
 #ifdef __semaphore_back_buffered
                 std::atomic<int> __backbuffer;
 #endif
-                __semaphore_sem_t __semaphore;
+
+                template <class T>
+                friend void __atomic_notify_semaphore(atomic<T> const* a, buffered_semaphore* s);
+
+                template <class T, class V, class Fun>
+                friend bool __atomic_wait_semaphore(atomic<T> const* a, V oldval, buffered_semaphore* s, memory_order order, Fun fun);
             };
 
             //typedef __counting_semaphore counting_semaphore;
             typedef buffered_semaphore counting_semaphore;
 
-            template <class Sem>
-            inline void semaphore_release(Sem* f) noexcept {
-                f->release();
+            template <class Sem, class Count>
+            inline void semaphore_release_count_explicit(Sem* f, Count count, memory_order order) noexcept {
+                f->release(count, order);
+            }
+            template <class Sem, class Count>
+            inline void semaphore_release_count(Sem* f, Count count) noexcept {
+                semaphore_release_count_explicit(f, count, memory_order_seq_cst);
             }
             template <class Sem>
             inline void semaphore_release_explicit(Sem* f, memory_order order) noexcept {
                 f->release(order);
             }
             template <class Sem>
-            inline void semaphore_release_explicit_notify(Sem* f, memory_order order, semaphore_notify notify) noexcept {
-                f->release(order, notify);
+            inline void semaphore_release(Sem* f) noexcept {
+                semaphore_release_explicit(f, memory_order_seq_cst);
             }
             template <class Sem>
-            inline void semaphore_release(Sem* f, typename Sem::__base_t term) noexcept {
-                f->release(term);
-            }
-            template <class Sem>
-            inline void semaphore_release_explicit(Sem* f, typename Sem::__base_t term, memory_order order) noexcept {
-                f->release(term, order);
-            }
-            template <class Sem>
-            inline void semaphore_release_explicit_notify(Sem* f, typename Sem::__base_t term, memory_order order, semaphore_notify notify) noexcept {
-                f->release(term, order, notify);
-            }
-
-            template <class Sem>
-            inline void semaphore_acquire(Sem* f) {
-                f->acquire();
-            }
-            template <class Sem>
-            inline void semaphore_acquire_explicit(Sem* f, memory_order order) {
+            inline void semaphore_acquire_explicit(Sem* f, memory_order order) noexcept {
                 f->acquire(order);
             }
             template <class Sem>
-            inline void semaphore_acquire(Sem* f, typename Sem::__base_t term) {
-                f->acquire(term);
+            inline void semaphore_acquire(Sem* f) noexcept {
+                semaphore_acquire_explicit(f, memory_order_seq_cst);
             }
-            template <class Sem>
-            inline void semaphore_acquire_explicit(Sem* f, typename Sem::__base_t term, memory_order order) {
-                f->acquire(term, order);
+            template <class Sem, class Rep, class Period>
+            inline void semaphore_acquire_for_explicit(Sem* f, std::chrono::duration<Rep, Period> const& rel_time, memory_order order) noexcept {
+                f->acquire_for(rel_time, order);
+            }
+            template <class Sem, class Rep, class Period>
+            inline void semaphore_acquire_for(Sem* f, std::chrono::duration<Rep, Period> const& rel_time) noexcept {
+                semaphore_acquire_for_explicit(f, rel_time, memory_order_seq_cst);
+            }
+            template <class Sem, class Clock, class Duration>
+            inline void semaphore_acquire_until_explicit(Sem* f, std::chrono::time_point<Clock, Duration> const& abs_time, memory_order order) noexcept {
+                f->acquire_until(abs_time, order);
+            }
+            template <class Sem, class Clock, class Duration>
+            inline void semaphore_acquire_until(Sem* f, std::chrono::time_point<Clock, Duration> const& abs_time) noexcept {
+                semaphore_acquire_until_explicit(f, abs_time, memory_order_seq_cst);
+            }
+
+            template <class T>
+            void __atomic_notify_semaphore(atomic<T> const* a, counting_semaphore* s) {
+
+                if (__semaphore_expect(!s->__reversebuffer.load(memory_order_relaxed), 1))
+                    return;
+                atomic_thread_fence(std::memory_order_seq_cst);
+                int const waiting = s->__reversebuffer.exchange(0, memory_order_relaxed);
+                if (__semaphore_expect(waiting, 0))
+                    s->release(waiting, memory_order_release);
+            }
+            
+            template <class T>
+            void atomic_notify_semaphore(atomic<T> const* a, counting_semaphore* s) {
+
+                __atomic_notify_semaphore(a, s);
+            }
+
+            template <class T, class V, class Fun>
+            bool __atomic_wait_semaphore(atomic<T> const* a, V oldval, counting_semaphore* s, memory_order order, Fun fun) {
+
+                for (int i = 0; i < 128; ++i, __semaphore_yield())
+                    if (__semaphore_expect(a->load(order) != oldval, 1))
+                        return true;
+                do {
+                    s->__reversebuffer.fetch_add(1, memory_order_relaxed);
+                    atomic_thread_fence(memory_order_seq_cst);
+                    if (__semaphore_expect(a->load(order) != oldval, 0)) {
+                        int const waiting = s->__reversebuffer.exchange(0, memory_order_relaxed);
+                        switch (waiting) {
+                        case 0:  s->acquire(memory_order_relaxed); // uuuuuuuuhhhh, this is really weird for for/until
+                        case 1:  break;
+                        default: s->release(waiting - 1, memory_order_relaxed);
+                        }
+                        return true;
+                    }
+                    if(!fun()) return false;
+                } while (a->load(order) != oldval);
+                return false;
+            }
+
+            template <class T, class V>
+            void atomic_wait_semaphore_explicit(std::atomic<T> const* a, V oldval, counting_semaphore* s, std::memory_order order) {
+                auto const fun = [=]() -> bool { s->acquire(memory_order_relaxed); return true; };
+                __atomic_wait_semaphore(a, oldval, s, order, fun);
+            }
+            template <class T, class V>
+            void atomic_wait_semaphore(std::atomic<T> const* a, V oldval, counting_semaphore* s) {
+                atomic_wait_semaphore_explicit(a, oldval, s, std::memory_order_seq_cst);
+            }
+            template <class T, class V, class Rep, class Period>
+            bool atomic_wait_semaphore_for_explicit(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, counting_semaphore* s, std::memory_order order) {
+                auto const abs_time = __semaphore_clock::now() + rel_time;
+                auto const fun = [&]() -> bool { return s->acquire_until(abs_time, memory_order_relaxed); };
+                return __atomic_wait_semaphore(a, oldval, s, order);
+            }
+            template <class T, class V, class Rep, class Period>
+            bool atomic_wait_semaphore_for(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, counting_semaphore* s) {
+                return atomic_wait_semaphore_for_explicit(a, oldval, rel_time, s, std::memory_order_seq_cst);
+            }
+            template <class T, class V, class Clock, class Duration>
+            bool atomic_wait_semaphore_until_explicit(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, counting_semaphore* s, std::memory_order order) {
+                auto const fun = [&]() -> bool { return s->acquire_until(abs_time, memory_order_relaxed); };
+                return __atomic_wait_semaphore(a, oldval, s, order, fun);
+            }
+            template <class T, class V, class Clock, class Duration>
+            bool atomic_wait_semaphore_until(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, counting_semaphore* s) {
+                return atomic_wait_semaphore_until_explicit(a, oldval, abs_time, s, std::memory_order_seq_cst);
+            }
+
+            struct alignas(64)               __atomic_wait_table_entry { counting_semaphore sem; };
+            static constexpr int             __atomic_wait_table_size = 0xF;
+            extern __atomic_wait_table_entry __atomic_wait_table[__atomic_wait_table_size];
+            inline size_t                    __atomic_wait_table_index(void const* ptr) { return ((uintptr_t)ptr / 64) & 0xF; }
+
+            template <class T>
+            void atomic_notify(atomic<T> const* a) {
+                atomic_notify_semaphore(a, &__atomic_wait_table[__atomic_wait_table_index(a)].sem);
+            }
+            template <class T, class V>
+            void atomic_wait_explicit(std::atomic<T> const* a, V oldval, std::memory_order order) {
+                atomic_wait_semaphore_explicit(a, oldval, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
+            }
+            template <class T, class V>
+            void atomic_wait(std::atomic<T> const* a, V oldval) {
+                atomic_wait_explicit(a, oldval, std::memory_order_seq_cst);
+            }
+            template <class T, class V, class Rep, class Period>
+            bool atomic_wait_for_explicit(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order) {
+                return atomic_wait_semaphore_for(a, oldval, rel_time, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
+            }
+            template <class T, class V, class Rep, class Period>
+            bool atomic_wait_for(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time) {
+                return atomic_wait_for_explicit(a, oldval, rel_time, std::memory_order_seq_cst);
+            }
+            template <class T, class V, class Clock, class Duration>
+            bool atomic_wait_until_explicit(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order) {
+                return atomic_wait_semaphore_until(a, oldval, abs_time, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
+            }
+            template <class T, class V, class Clock, class Duration>
+            bool atomic_wait_until(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time) {
+                return atomic_wait_until_explicit(a, oldval, abs_time, std::memory_order_seq_cst);
             }
 
         } // namespace concurrency_v2
