@@ -74,7 +74,7 @@ struct binary_semaphore_lock {
         f.release(std::memory_order_release);
     }
 private:
-    alignas(64) std::experimental::binary_semaphore f{ false };
+    alignas(64) std::experimental::binary_semaphore f{ true };
 };
 
 #ifdef WIN32

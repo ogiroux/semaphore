@@ -192,7 +192,7 @@ public:
                 set_affinity(i);
                 running++;
                 while (go != true) std::this_thread::yield();
-                while (stop != true) {
+                for (int my_iterations = 0; stop.load(std::memory_order_relaxed) != true; ++my_iterations) {
                     f(i, r);
                     iterations.fetch_add(1, std::memory_order_relaxed);
                 }

@@ -43,22 +43,36 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifdef WIN32
     #include <windows.h>
+    #ifdef min
+        #define __semaphore_old_min min
+        #undef min
+    #endif
+    #ifdef max
+        #define __semaphore_old_max max
+        #undef max
+    #endif
     typedef HANDLE __semaphore_sem_t;
     inline bool __semaphore_sem_init(__semaphore_sem_t& sem, int init) { 
-        return (sem = CreateSemaphore(NULL, init, INT_MAX, NULL)) != (HANDLE)ERROR_INVALID_HANDLE; 
+        bool const ret = (sem = CreateSemaphore(NULL, init, INT_MAX, NULL)) != NULL;
+        assert(ret);
+        return ret;
     }
     inline bool __semaphore_sem_destroy(__semaphore_sem_t& sem) { 
-        return CloseHandle(sem) == TRUE; 
+        assert(sem != NULL);
+        return CloseHandle(sem) == TRUE;
     }
     inline bool __semaphore_sem_post(__semaphore_sem_t& sem, int inc) { 
+        assert(sem != NULL);
         assert(inc > 0);
         return ReleaseSemaphore(sem, inc, NULL) == TRUE; 
     }
     inline bool __semaphore_sem_wait(__semaphore_sem_t& sem) { 
+        assert(sem != NULL);
         return WaitForSingleObject(sem, INFINITE) == WAIT_OBJECT_0;
     }
     template < class Rep, class Period>
     inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
+        assert(sem != NULL);
         return WaitForSingleObject(sem, std::chrono::milliseconds(delta).count()) == WAIT_OBJECT_0;
     }
     #if _WIN32_WINNT >= 0x0602
@@ -299,50 +313,36 @@ namespace std {
 
             struct __counting_semaphore {
 
-                typedef int __base_t;
-                static constexpr int __base_t_bits = CHAR_BIT * sizeof(int);
-
 #ifdef __semaphore_fast_path
-                static constexpr __base_t __valumask = (1 << (__base_t_bits - 2)) - 1,
-                                          __contmask = (1 << (__base_t_bits - 2)),
-                                          __lockmask = (1 << (__base_t_bits - 1));
+                static constexpr int __valumask = ~3,
+                                     __contmask =  2,
+                                     __lockmask =  1,
+                                     __shift = 2;
 #else
-                static constexpr __base_t __valumask = ~0,
-                                          __contmask = 0,
-                                          __lockmask = 0;
+                static constexpr int __valumask = ~0,
+                                     __contmask =  0,
+                                     __lockmask =  0,
+                                     __shift = 0;
 #endif
-                static constexpr __base_t max = __valumask >> 1;
-                static constexpr __base_t __bias = max + 1;
-                static constexpr __base_t min = -__bias;
 
-                template<class Pred>
-                bool __fetch_sub_if_slow(Pred pred, __base_t term, __base_t old, memory_order order) noexcept {
+                static constexpr int max() { 
 
-                    assert(term >= 0 && term <= max);
-
-                    do {
-                        old &= ~__lockmask;
-                        if (atom.compare_exchange_weak(old, old - term, order, memory_order_relaxed))
-                            return true;
-                    } while (pred((old & __valumask) - __bias));
-
-                    return false;
+                    return int(unsigned(__valumask) >> __shift); 
                 }
 
-                template<class Pred>
-                bool __fetch_sub_if(Pred pred, __base_t term, memory_order order) noexcept {
+                bool __fetch_sub_if_slow(int old, memory_order order) noexcept;
 
-                    assert(term >= 0 && term <= max);
+                bool __fetch_sub_if(memory_order order) noexcept {
 
-                    __base_t old = __bias+term, set = __bias+0;
+                    int old = 1 << __shift, set = 0;
                     bool retcode = atom.compare_exchange_weak(old, set, order, memory_order_relaxed);
-                    if (__semaphore_expect(!retcode && pred((old & __valumask) - __bias), 0)) {
+                    if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0)) {
                         old &= __valumask;
-                        set = old - term;
+                        set = old - (1<< __shift);
                         retcode = atom.compare_exchange_weak(old, set, order, memory_order_relaxed);
                     }
-                    if (__semaphore_expect(!retcode && pred((old & __valumask) - __bias), 0))
-                        retcode = __fetch_sub_if_slow(pred, term, old, order);
+                    if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0))
+                        retcode = __fetch_sub_if_slow(old, order);
 #ifdef __semaphore_arm
                     if (!retcode) {
                         __asm__ __volatile__(
@@ -355,23 +355,22 @@ namespace std {
                 }
 
 #ifdef __semaphore_fast_path
-                void __fetch_add_slow(__base_t term, __base_t old, memory_order order, semaphore_notify notify) noexcept;
+                void __fetch_add_slow(int term, int old, memory_order order, semaphore_notify notify) noexcept;
 #endif                
 
-                inline void release(__base_t term, memory_order order = memory_order_seq_cst, semaphore_notify notify = semaphore_notify::all) noexcept {
+                inline void release(int term, memory_order order = memory_order_seq_cst, semaphore_notify notify = semaphore_notify::all) noexcept {
 
 #ifdef __semaphore_fast_path
-                    __base_t old = __bias+0, set = __bias+term;
+                    int old = 0, set = term << __shift;
                     bool success = atom.compare_exchange_weak(old, set, order, memory_order_relaxed);
                     while (__semaphore_expect(!success && !(old & (__contmask | __lockmask)), 0)) {
-                        set = old + term;
+                        set = old + (term << __shift);
                         success = atom.compare_exchange_weak(old, set, order, memory_order_relaxed);
                     }
-                    assert((__bias + max - (old & __valumask)) >= term);
                     if (__semaphore_expect(!success, 0))
                         __fetch_add_slow(term, old, order, notify);
 #else
-                    __base_t old = atom.fetch_add(term, order);
+                    int old = atom.fetch_add(term, order);
 #endif
 
 #ifdef __semaphore_arm
@@ -382,17 +381,18 @@ namespace std {
 #endif
                 }
 
-                void __wait_slow(__base_t c, memory_order order) noexcept;
+                bool __wait_slow_timed(int c, chrono::time_point<__semaphore_clock, __semaphore_duration> const& abs_time, memory_order order) noexcept;
 
-                template<class Pred>
-                inline bool __wait_fast(Pred pred, memory_order order) noexcept {
+                void __wait_slow(memory_order order) noexcept;
 
-                    auto value = (atom.load(order) & __valumask) - __bias;
-                    if (__semaphore_expect(pred(value), 1))
+                inline bool __wait_fast(memory_order order) noexcept {
+
+                    auto value = (atom.load(order) >> __shift);
+                    if (__semaphore_expect(value >= 1, 1))
                         return true;
 #ifdef __semaphore_arm
                     for (int i = 0; i < 4; ++i) {
-                        __base_t const tmp = old;
+                        auto const tmp = old;
                         __asm__ __volatile__(
                             "ldrex %0, [%1]\n"
                             "cmp %0, %2\n"
@@ -401,8 +401,8 @@ namespace std {
                             "nop.w\n"
                             : "=&r" (old) : "r" (&atom), "r" (tmp) : "cc"
                         );
-                        value = (atom.load(order) & __valumask) - __bias;
-                        if (__semaphore_expect(pred(value), 1)) {
+                        value = (atom.load(order) >> __shift);
+                        if (__semaphore_expect(value >= 1, 1)) {
                             atomic_thread_fence(order); 
                             return true; 
                         }
@@ -410,75 +410,26 @@ namespace std {
 #endif
                     for (int i = 0; i < 32; ++i) {
                         __semaphore_yield();
-                        value = (atom.load(order) & __valumask) - __bias;
-                        if (__semaphore_expect(pred(value), 1)) return true;
+                        value = (atom.load(order) >> __shift);
+                        if (__semaphore_expect(value >= 1, 1)) return true;
                     }
                     return false;
                 }
 
-#ifdef __semaphore_fast_path
-                void __wait_final(__base_t old) noexcept;
-#endif
+                inline void acquire(int term = 1, memory_order order = memory_order_seq_cst) noexcept {
 
-                template<class Pred>
-                void __wait_slow(Pred pred, memory_order order) noexcept {
-
-                    __base_t old;
-                    __semaphore_exponential_backoff b;
-#ifdef __semaphore_fast_path
-                    for (int i = 0; i < 2; ++i) {
-#else
-                    while (1) {
-#endif
-                        b.sleep();
-                        old = atom.load(order);
-                        if (pred((old & __valumask) - __bias)) goto done;
+                    while (__semaphore_expect(!__fetch_sub_if(order), 0)) {
+                        bool const success = __wait_fast(order);
+                        if (__semaphore_expect(!success, 0))
+                            __wait_slow(order);
                     }
-#ifdef __semaphore_fast_path
-                    while (1) {
-                        old = atom.fetch_or(__contmask, memory_order_relaxed) | __contmask;
-                        if (pred((old & __valumask) - __bias)) goto done;
-                        __wait_final(old);
-                        old = atom.load(order);
-                        if (pred((old & __valumask) - __bias)) goto done;
-                    }
-#endif
-                done:
-#ifdef __semaphore_fast_path
-                    while (old & __lockmask)
-                        old = atom.load(memory_order_relaxed);
-#else
-                    ;
-#endif
                 }
-
-                template<class Pred>
-                inline void __wait_if(Pred pred, memory_order order = memory_order_seq_cst) noexcept {
-
-                    bool const success = __wait_fast(pred, order);
-                    if (__semaphore_expect(!success, 0))
-                        __wait_slow(pred, order);
-                }
-
-                template<class Pred>
-                inline void acquire_if(Pred pred, __base_t term, memory_order order = memory_order_seq_cst) noexcept {
-
-                    while (__semaphore_expect(!__fetch_sub_if(pred, term, order), 0))
-                        __wait_if(pred, order);
-                }
-                inline void acquire(__base_t term = 1, memory_order order = memory_order_seq_cst) noexcept {
-
-                    acquire_if([=](__base_t value) -> bool { return value >= term; }, term, order);
-                }
-
-                bool __wait_slow_timed(__base_t c, chrono::time_point<__semaphore_clock, __semaphore_duration> const& abs_time, memory_order order) noexcept;
 
                 template <class Clock, class Duration>
-                bool acquire_until(chrono::time_point<Clock, Duration> const& abs_time, __base_t term = 1, memory_order order = memory_order_seq_cst) {
+                bool acquire_until(chrono::time_point<Clock, Duration> const& abs_time, int term = 1, memory_order order = memory_order_seq_cst) {
 
-                    auto const pred = [=](__base_t value) -> bool { return value >= term; };
-                    while (__semaphore_expect(!__fetch_sub_if(pred, term, order), 0)) {
-                        bool success = __wait_fast(pred, order);
+                    while (__semaphore_expect(!__fetch_sub_if(order), 0)) {
+                        bool success = __wait_fast(order);
                         if (__semaphore_expect(!success, 0))
                             success = __wait_slow_timed(term, order, abs_time);
                         if (__semaphore_expect(!success, 0))
@@ -487,29 +438,35 @@ namespace std {
                     return true;
                 }
                 template <class Rep, class Period>
-                bool acquire_for(chrono::duration<Rep, Period> const& rel_time, __base_t term = 1, memory_order order = memory_order_seq_cst) {
+                bool acquire_for(chrono::duration<Rep, Period> const& rel_time, int term = 1, memory_order order = memory_order_seq_cst) {
 
-                    auto const pred = [=](__base_t value) -> bool { return value >= term; };
-                    if (__semaphore_expect(__fetch_sub_if(pred, term, order), 1))
+                    if (__semaphore_expect(__fetch_sub_if(order), 1))
                         return true;
                     else
                         return acquire_until(__semaphore_clock::now() + rel_time, order);
                 }
 
-                __counting_semaphore(__base_t initial) noexcept : atom(initial+__bias) {
-                    assert(initial >= min && initial <= max);
+                __counting_semaphore(int initial) noexcept : atom(initial << __shift) {
+                    assert(initial >= 0 && initial <= max());
                 }
                 __counting_semaphore() noexcept = default;
                 __counting_semaphore(const __counting_semaphore&) = delete;
                 __counting_semaphore& operator=(const __counting_semaphore&) = delete;
 
-                atomic<__base_t> atom{ __base_t() };
+            private:
+                atomic<int> __reversebuffer{ 0 };
+                atomic<int> atom{ 0 };
 
+                template <class T>
+                friend void __atomic_notify_semaphore(atomic<T> const* a, __counting_semaphore* s);
+
+                template <class T, class V, class Fun>
+                friend bool __atomic_wait_semaphore(atomic<T> const* a, V oldval, __counting_semaphore* s, memory_order order, Fun fun);
             };
 
             struct buffered_semaphore {
 
-                static constexpr int max_limit = (std::numeric_limits<int>::max)() >> 1;
+                static constexpr int max_limit = numeric_limits<int>::max() >> 1;
 
                 inline void release(int term, std::memory_order order = std::memory_order_seq_cst,
                     std::experimental::semaphore_notify notify = std::experimental::semaphore_notify::all) noexcept {
@@ -529,6 +486,12 @@ namespace std {
                         inc = 1;
 #endif
                         auto const result = __semaphore_sem_post(__semaphore, inc);
+#ifdef WIN32
+                        if (!result) {
+                            auto d = GetLastError();
+                            assert(d == ERROR_SUCCESS);
+                        }
+#endif
                         assert(result);
                     }
                     __frontbuffer.fetch_sub(1);
@@ -579,6 +542,12 @@ namespace std {
                     if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
                         return;
                     auto const result = __semaphore_sem_wait(__semaphore);
+#ifdef WIN32
+                    if (!result) {
+                        auto d = GetLastError();
+                        assert(d == ERROR_SUCCESS);
+                    }
+#endif
                     assert(result);
                     __backfill();
                 }
@@ -609,6 +578,12 @@ namespace std {
                     assert(initial >= 0 && initial <= max_limit);
 
                     auto const result = __semaphore_sem_init(__semaphore, initial);
+#ifdef WIN32
+                    if (!result) {
+                        auto d = GetLastError();
+                        assert(d == ERROR_SUCCESS);
+                    }
+#endif
                     assert(result);
                 }
                 ~buffered_semaphore() {
@@ -750,7 +725,7 @@ namespace std {
             }
 
             struct alignas(64)               __atomic_wait_table_entry { counting_semaphore sem; };
-            static constexpr int             __atomic_wait_table_size = 0xF;
+            static constexpr int             __atomic_wait_table_size = 0x10;
             extern __atomic_wait_table_entry __atomic_wait_table[__atomic_wait_table_size];
             inline size_t                    __atomic_wait_table_index(void const* ptr) { return ((uintptr_t)ptr / 64) & 0xF; }
 
@@ -786,5 +761,12 @@ namespace std {
         } // namespace concurrency_v2
     } // namespace experimental
 } // namespace std
+
+#ifdef __semaphore_old_min
+    #define min __semaphore_old_min
+#endif
+#ifdef __semaphore_old_max
+    #define max __semaphore_old_max
+#endif
 
 #endif //binary_semaphore_hpp

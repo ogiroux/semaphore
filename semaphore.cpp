@@ -217,20 +217,26 @@ namespace std {
                 return true;
             }
 
-#ifdef __semaphore_fast_path
-            void __counting_semaphore::__fetch_add_slow(__base_t term, __counting_semaphore::__base_t old, memory_order order, semaphore_notify notify) noexcept {
+            bool __counting_semaphore::__fetch_sub_if_slow(int old, memory_order order) noexcept {
 
-                assert(term >= min && term <= max);
+                do {
+                    old &= ~__lockmask;
+                    if (atom.compare_exchange_weak(old, old - (1 << __shift), order, memory_order_relaxed))
+                        return true;
+                } while ((old >> __shift) >= 1);
+
+                return false;
+            }
+
+#ifdef __semaphore_fast_path
+            void __counting_semaphore::__fetch_add_slow(int term, int old, memory_order order, semaphore_notify notify) noexcept {
+
+                assert(term >= 0 && term <= max());
 
                 while (1) {
 
-                    if(term >= 0)
-                        assert(__bias + max - (old & __valumask) >= term);
-                    else
-                        assert((old & __valumask) - __bias >= min - term);
-
                     bool const apply_lock = ((old & __contmask) != 0) && (notify != semaphore_notify::none);
-                    __base_t const set = ((old & __valumask) + term) | (apply_lock ? __lockmask : 0);
+                    int const set = ((old & __valumask) + (term<<__shift)) | (apply_lock ? __lockmask : 0);
 
                     old &= ~__lockmask;
                     if (atom.compare_exchange_weak(old, set, order, memory_order_relaxed)) {
@@ -247,11 +253,36 @@ namespace std {
                 }
             }
 
-            void __counting_semaphore::__wait_final(__base_t old) noexcept {
+            void __counting_semaphore::__wait_slow(memory_order order) noexcept {
 
-                __semaphore_wait(atom, old);
+                int old;
+                __semaphore_exponential_backoff b;
+#ifdef __semaphore_fast_path
+                for (int i = 0; i < 2; ++i) {
+#else
+                while (1) {
+#endif
+                    b.sleep();
+                    old = atom.load(order);
+                    if ((old >> __shift) >= 1) goto done;
+                }
+#ifdef __semaphore_fast_path
+                while (1) {
+                    old = atom.fetch_or(__contmask, memory_order_relaxed) | __contmask;
+                    if ((old >> __shift) >= 1) goto done;
+                    __semaphore_wait(atom, old);
+                    old = atom.load(order);
+                    if ((old >> __shift) >= 1) goto done;
+                }
+#endif
+            done:
+#ifdef __semaphore_fast_path
+                while (old & __lockmask)
+                    old = atom.load(memory_order_relaxed);
+#else
+                ;
+#endif
             }
-
 
 #endif                
 
