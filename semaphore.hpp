@@ -73,7 +73,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     template < class Rep, class Period>
     inline bool __semaphore_sem_wait_timed(__semaphore_sem_t& sem, std::chrono::duration<Rep, Period> const& delta) { 
         assert(sem != NULL);
-        return WaitForSingleObject(sem, std::chrono::milliseconds(delta).count()) == WAIT_OBJECT_0;
+        return WaitForSingleObject(sem, (DWORD)std::chrono::duration_cast<std::chrono::milliseconds>(delta).count()) == WAIT_OBJECT_0;
     }
     #if _WIN32_WINNT >= 0x0602
         #define __semaphore_fast_path
