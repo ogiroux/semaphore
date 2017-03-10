@@ -168,8 +168,10 @@ double compute_work_item_cost(R r) {
     for (int i = 0; i < measure_count; ++i) r.discard(1);
 
     auto end = my_clock::now();
+    auto delta = end - start;
+    auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count();
 
-    return std::chrono::nanoseconds(end - start).count() / double(measure_count);
+    return count / double(measure_count);
 }
 
 class run {
@@ -313,7 +315,7 @@ typedef binary_semaphore_lock2 test_mutex_2;
     std::cout << "Warming up...\r" << std::flush;
     compute_work_item_cost(r);
     auto cost = compute_work_item_cost(r);
-    auto target_count = int(5E1 / cost);
+    auto target_count = std::max(1, int(10E2 / cost));
     cost = do_run(nullstream, std::cout, "CONTROL run for 1-thread", 1, [=](int, std::mt19937&) mutable {
         for (int i = 0; i < target_count; ++i) r.discard(1);
     }, target_count, cost);
