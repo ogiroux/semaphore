@@ -160,7 +160,7 @@ namespace std {
                                                   chrono::high_resolution_clock, 
                                                   chrono::steady_clock>::type;
 
-            using __semaphore_duration = chrono::microseconds;
+            using __semaphore_duration = chrono::nanoseconds;
 
             // A simple exponential back-off helper that is designed to cover the space between (1<<__magic_number_3) and __magic_number_4
             class __semaphore_exponential_backoff {
@@ -287,7 +287,7 @@ namespace std {
                     while (__semaphore_expect(__test_and_set(order), 0)) {
                         bool success = __wait_fast(order);
                         if (__semaphore_expect(!success, 0))
-                            success = __wait_slow_timed(order, abs_time);
+                            success = __wait_slow_timed(abs_time, order);
                         if (__semaphore_expect(!success, 0))
                             return false;
                     }
@@ -300,6 +300,10 @@ namespace std {
                         return true;
                     else
                         return acquire_until(__semaphore_clock::now() + rel_time, order);
+                }
+                inline bool try_acquire(std::memory_order order = std::memory_order_seq_cst) noexcept {
+
+                    return acquire_for(chrono::nanoseconds(0), order);
                 }
 
                 __binary_semaphore(bool available) noexcept : atom(!available) { }
@@ -431,7 +435,7 @@ namespace std {
                     while (__semaphore_expect(!__fetch_sub_if(order), 0)) {
                         bool success = __wait_fast(order);
                         if (__semaphore_expect(!success, 0))
-                            success = __wait_slow_timed(term, order, abs_time);
+                            success = __wait_slow_timed(term, abs_time, order);
                         if (__semaphore_expect(!success, 0))
                             return false;
                     }
@@ -443,7 +447,11 @@ namespace std {
                     if (__semaphore_expect(__fetch_sub_if(order), 1))
                         return true;
                     else
-                        return acquire_until(__semaphore_clock::now() + rel_time, order);
+                        return acquire_until(__semaphore_clock::now() + chrono::duration_cast<std::chrono::nanoseconds>(rel_time), order);
+                }
+                inline bool try_acquire(std::memory_order order = std::memory_order_seq_cst) noexcept {
+
+                    return acquire_for(chrono::nanoseconds(0), order);
                 }
 
                 __counting_semaphore(int initial) noexcept : atom(initial << __shift) {
@@ -567,7 +575,13 @@ namespace std {
         
                     return acquire_for(abs_time - Clock::now(), order);
                 }
+                inline bool try_acquire(std::memory_order order = std::memory_order_seq_cst) noexcept {
 
+                    __wait_fast();
+                    if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
+                        return true;
+                    return acquire_for(chrono::nanoseconds(0), order);
+                }
                 buffered_semaphore(int initial = 0) noexcept 
                     : __reversebuffer{ 0 }
                     , __frontbuffer{ initial << 1 }
@@ -619,40 +633,40 @@ namespace std {
                 f->release(count, order);
             }
             template <class Sem, class Count>
-            inline void semaphore_release_count(Sem* f, Count count) noexcept {
-                semaphore_release_count_explicit(f, count, memory_order_seq_cst);
+            inline void semaphore_release_count(Sem* f, Count count, memory_order order = memory_order_seq_cst) noexcept {
+                semaphore_release_count_explicit(f, count, order);
             }
             template <class Sem>
             inline void semaphore_release_explicit(Sem* f, memory_order order) noexcept {
                 f->release(order);
             }
             template <class Sem>
-            inline void semaphore_release(Sem* f) noexcept {
-                semaphore_release_explicit(f, memory_order_seq_cst);
+            inline void semaphore_release(Sem* f, memory_order order = memory_order_seq_cst) noexcept {
+                semaphore_release_explicit(f, order);
             }
             template <class Sem>
             inline void semaphore_acquire_explicit(Sem* f, memory_order order) noexcept {
                 f->acquire(order);
             }
             template <class Sem>
-            inline void semaphore_acquire(Sem* f) noexcept {
-                semaphore_acquire_explicit(f, memory_order_seq_cst);
+            inline void semaphore_acquire(Sem* f, memory_order order = memory_order_seq_cst) noexcept {
+                semaphore_acquire_explicit(f, order);
+            }
+            template <class Sem>
+            inline bool semaphore_try_acquire_explicit(Sem* f, memory_order order) noexcept {
+                return f->try_acquire(order);
+            }
+            template <class Sem>
+            inline bool semaphore_try_acquire(Sem* f, memory_order order = memory_order_seq_cst) noexcept {
+                return semaphore_try_acquire_explicit(f, order);
             }
             template <class Sem, class Rep, class Period>
-            inline void semaphore_acquire_for_explicit(Sem* f, std::chrono::duration<Rep, Period> const& rel_time, memory_order order) noexcept {
+            inline void semaphore_acquire_for(Sem* f, std::chrono::duration<Rep, Period> const& rel_time, memory_order order = memory_order_seq_cst) noexcept {
                 f->acquire_for(rel_time, order);
             }
-            template <class Sem, class Rep, class Period>
-            inline void semaphore_acquire_for(Sem* f, std::chrono::duration<Rep, Period> const& rel_time) noexcept {
-                semaphore_acquire_for_explicit(f, rel_time, memory_order_seq_cst);
-            }
             template <class Sem, class Clock, class Duration>
-            inline void semaphore_acquire_until_explicit(Sem* f, std::chrono::time_point<Clock, Duration> const& abs_time, memory_order order) noexcept {
+            inline void semaphore_acquire_until(Sem* f, std::chrono::time_point<Clock, Duration> const& abs_time, memory_order order = memory_order_seq_cst) noexcept {
                 f->acquire_until(abs_time, order);
-            }
-            template <class Sem, class Clock, class Duration>
-            inline void semaphore_acquire_until(Sem* f, std::chrono::time_point<Clock, Duration> const& abs_time) noexcept {
-                semaphore_acquire_until_explicit(f, abs_time, memory_order_seq_cst);
             }
 
             template <class T>
@@ -701,27 +715,17 @@ namespace std {
                 __atomic_wait_semaphore(a, oldval, s, order, fun);
             }
             template <class T, class V>
-            void atomic_wait_semaphore(std::atomic<T> const* a, V oldval, counting_semaphore* s) {
-                atomic_wait_semaphore_explicit(a, oldval, s, std::memory_order_seq_cst);
-            }
-            template <class T, class V, class Rep, class Period>
-            bool atomic_wait_semaphore_for_explicit(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, counting_semaphore* s, std::memory_order order) {
-                auto const abs_time = __semaphore_clock::now() + rel_time;
-                auto const fun = [&]() -> bool { return s->acquire_until(abs_time, memory_order_relaxed); };
-                return __atomic_wait_semaphore(a, oldval, s, order);
-            }
-            template <class T, class V, class Rep, class Period>
-            bool atomic_wait_semaphore_for(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, counting_semaphore* s) {
-                return atomic_wait_semaphore_for_explicit(a, oldval, rel_time, s, std::memory_order_seq_cst);
+            void atomic_wait_semaphore(std::atomic<T> const* a, V oldval, counting_semaphore* s, std::memory_order order = std::memory_order_seq_cst) {
+                atomic_wait_semaphore_explicit(a, oldval, s, order);
             }
             template <class T, class V, class Clock, class Duration>
-            bool atomic_wait_semaphore_until_explicit(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, counting_semaphore* s, std::memory_order order) {
+            bool atomic_wait_semaphore_until(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, counting_semaphore* s, std::memory_order order = std::memory_order_seq_cst) {
                 auto const fun = [&]() -> bool { return s->acquire_until(abs_time, memory_order_relaxed); };
                 return __atomic_wait_semaphore(a, oldval, s, order, fun);
             }
-            template <class T, class V, class Clock, class Duration>
-            bool atomic_wait_semaphore_until(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, counting_semaphore* s) {
-                return atomic_wait_semaphore_until_explicit(a, oldval, abs_time, s, std::memory_order_seq_cst);
+            template <class T, class V, class Rep, class Period>
+            bool atomic_wait_semaphore_for(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, counting_semaphore* s, std::memory_order order = std::memory_order_seq_cst) {
+                return atomic_wait_semaphore_until(a, oldval, __semaphore_clock::now() + rel_time, s, order);
             }
 
             struct alignas(64)               __atomic_wait_table_entry { counting_semaphore sem; };
@@ -738,24 +742,16 @@ namespace std {
                 atomic_wait_semaphore_explicit(a, oldval, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
             }
             template <class T, class V>
-            void atomic_wait(std::atomic<T> const* a, V oldval) {
-                atomic_wait_explicit(a, oldval, std::memory_order_seq_cst);
+            void atomic_wait(std::atomic<T> const* a, V oldval, std::memory_order order = std::memory_order_seq_cst) {
+                atomic_wait_explicit(a, oldval, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
             }
             template <class T, class V, class Rep, class Period>
-            bool atomic_wait_for_explicit(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order) {
+            bool atomic_wait_for(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order = std::memory_order_seq_cst) {
                 return atomic_wait_semaphore_for(a, oldval, rel_time, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
             }
-            template <class T, class V, class Rep, class Period>
-            bool atomic_wait_for(std::atomic<T> const* a, V oldval, std::chrono::duration<Rep, Period> const& rel_time) {
-                return atomic_wait_for_explicit(a, oldval, rel_time, std::memory_order_seq_cst);
-            }
             template <class T, class V, class Clock, class Duration>
-            bool atomic_wait_until_explicit(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order) {
+            bool atomic_wait_until(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order = std::memory_order_seq_cst) {
                 return atomic_wait_semaphore_until(a, oldval, abs_time, &__atomic_wait_table[__atomic_wait_table_index(a)].sem, order);
-            }
-            template <class T, class V, class Clock, class Duration>
-            bool atomic_wait_until(std::atomic<T> const* a, V oldval, std::chrono::time_point<Clock, Duration> const& abs_time) {
-                return atomic_wait_until_explicit(a, oldval, abs_time, std::memory_order_seq_cst);
             }
 
         } // namespace concurrency_v2
