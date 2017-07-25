@@ -30,47 +30,70 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #define _WIN32_WINNT 0x0602
 #endif
 
-#include "test.hpp"
-
-#include <map>
+#include <numeric>
 #include <string>
-#include <atomic>
-#include <random>
 #include <chrono>
 #include <iostream>
-#include <sstream>
-#include <fstream>
-#include <iomanip>
+#include <atomic>
+#include <thread>
+#include <mutex>
+#include <semaphore>
 #include <algorithm>
+#include <set>
+#include <map>
+#include <iomanip>
+#include <fstream>
+#include <cmath>
 
-static int measure_count = 1 << 28;
-static double time_target_in_seconds = 5;
+#ifndef __test_abi
+  #define __test_abi
+  #define __managed__
+  template<class T>
+  using atomic = std::atomic<T>;
+  using mutex = std::mutex;
+  using thread = std::thread;
+  using namespace std::experimental;
+  template<class F>
+  int start_gpu_threads(uint32_t count, F f) { assert(!count); return 0; }
+  void stop_gpu_threads(int) { }
+  uint32_t max_gpu_threads() { return 0; }
+  unsigned int dev = 0;
+  unsigned int cap = 0;
+#endif
+
+#include "test.hpp"
 
 #if defined(__linux__) || defined(__APPLE__)
-#include <unistd.h>
-#include <sys/times.h>
-typedef tms cpu_time;
-cpu_time get_cpu_time() {
-    cpu_time t;
-    times(&t);
-    return t;
-}
-double user_time_consumed(cpu_time start, cpu_time end) {
-    auto nanoseconds_per_clock_tick = double(1000000000) / sysconf(_SC_CLK_TCK);
-    auto clock_ticks_elapsed = end.tms_utime - start.tms_utime;
-    return clock_ticks_elapsed * nanoseconds_per_clock_tick;
-}
-double system_time_consumed(cpu_time start, cpu_time end) {
-    auto nanoseconds_per_clock_tick = double(1000000000) / sysconf(_SC_CLK_TCK);
-    auto clock_ticks_elapsed = end.tms_stime - start.tms_stime;
-    return clock_ticks_elapsed * nanoseconds_per_clock_tick;
-}
+  #include <unistd.h>
+  #include <cstring>
+  #include <sys/times.h>
+  #include <sys/time.h>
+  #include <sys/resource.h>
+
+  typedef rusage cpu_time;
+  cpu_time get_cpu_time() {
+
+    cpu_time c;
+    std::memset(&c, 0, sizeof(cpu_time));
+    assert(0 == getrusage(RUSAGE_SELF, &c));
+
+    return c;
+  }
+  double user_time_consumed(cpu_time start, cpu_time end) {
+
+      return (end.ru_utime.tv_sec + 1E-6*end.ru_utime.tv_usec) -
+             (start.ru_utime.tv_sec + 1E-6*start.ru_utime.tv_usec);
+  }
+  double system_time_consumed(cpu_time start, cpu_time end) {
+
+      return (end.ru_stime.tv_sec + 1E-6*end.ru_stime.tv_usec) -
+             (start.ru_stime.tv_sec + 1E-6*start.ru_stime.tv_usec);
+  }
 #endif
 
 #ifdef __linux__
-#include <sched.h>
-void set_affinity(std::uint64_t cpu) {
-
+  #include <sched.h>
+  void set_affinity(std::uint64_t cpu) {
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
 
@@ -78,397 +101,658 @@ void set_affinity(std::uint64_t cpu) {
     CPU_SET(cpu, &cpuset);
 
     sched_setaffinity(0, sizeof(cpuset), &cpuset);
-}
+  }
 #endif
 
 #ifdef __APPLE__
-#include <mach/thread_policy.h>
-#include <pthread.h>
+  #include <mach/thread_policy.h>
+  #include <pthread.h>
 
-extern "C" kern_return_t thread_policy_set(thread_t                thread,
+  extern "C" kern_return_t thread_policy_set(thread_t                thread,
     thread_policy_flavor_t  flavor,
     thread_policy_t         policy_info,
     mach_msg_type_number_t  count);
 
-void set_affinity(std::uint64_t cpu) {
-
+  void set_affinity(std::uint64_t cpu) {
     cpu %= sizeof(integer_t) * 8;
     integer_t count = (1 << cpu);
     thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY, (thread_policy_t)&count, 1);
-}
+  }
 #endif
 
 #ifdef WIN32
-static HANDLE self = GetCurrentProcess();
-typedef std::pair<FILETIME, FILETIME> cpu_time;
-cpu_time get_cpu_time() {
+  static HANDLE self = GetCurrentProcess();
+  typedef std::pair<FILETIME, FILETIME> cpu_time;
+  cpu_time get_cpu_time() {
     cpu_time t;
     FILETIME ftime, fsys, fuser;
     GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
     memcpy(&t.first, &fsys, sizeof(FILETIME));
     memcpy(&t.second, &fuser, sizeof(FILETIME));
     return t;
-}
-std::uint64_t make64(std::uint64_t low, std::uint64_t high) {
+  }
+  std::uint64_t make64(std::uint64_t low, std::uint64_t high) {
     return low | (high << 32);
-}
-std::uint64_t make64(FILETIME ftime) {
+  }
+  std::uint64_t make64(FILETIME ftime) {
     return make64(ftime.dwLowDateTime, ftime.dwHighDateTime);
-}
-double user_time_consumed(cpu_time start, cpu_time end) {
+  }
+  double user_time_consumed(cpu_time start, cpu_time end) {
 
     double nanoseconds_per_clock_tick = 100; //100-nanosecond intervals
     auto clock_ticks_elapsed = make64(end.second) - make64(start.second);
     return clock_ticks_elapsed * nanoseconds_per_clock_tick;
-}
-double system_time_consumed(cpu_time start, cpu_time end) {
+  }
+  double system_time_consumed(cpu_time start, cpu_time end) {
 
     double nanoseconds_per_clock_tick = 100; //100-nanosecond intervals
     auto clock_ticks_elapsed = make64(end.first) - make64(start.first);
     return clock_ticks_elapsed * nanoseconds_per_clock_tick;
-}
-void set_affinity(std::uint64_t cpu) {
-
+  }
+  void set_affinity(std::uint64_t cpu) {
     cpu %= sizeof(std::uint64_t) * 8;
     SetThreadAffinityMask(GetCurrentThread(), int(1 << cpu));
-}
+  }
 #endif
 
-#ifdef EXTRA_LOCKS
-// On Mac, you can build this in your Git/WebKit directory like so:
-// xcrun clang++ -DEXTRA_LOCKS=1 -IPATH_TO_binary_semaphore/binary_semaphore -o LockSpeedTest2 Source/WTF/benchmarks/LockSpeedTest2.cpp -O3 -W -ISource/WTF -ISource/WTF/benchmarks -LWebKitBuild/Release -lWTF -framework Foundation -licucore -std=c++11 -fvisibility=hidden
+std::ofstream csv("output.csv");
 
-#include "config.h"
+struct time_record {
+    std::chrono::microseconds us;
+    double user_time;
+    double system_time;
+};
 
-//#include "ToyLocks.h"
-#include <thread>
-#include <unistd.h>
-#include <wtf/CurrentTime.h>
-#include <wtf/DataLog.h>
-#include <wtf/HashMap.h>
-#include <wtf/Lock.h>
-#include <wtf/ParkingLot.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/Threading.h>
-#include <wtf/ThreadingPrimitives.h>
-#include <wtf/Vector.h>
-#include <wtf/WordLock.h>
-#include <wtf/text/CString.h>
-#endif
+static constexpr uint32_t MAX_CPU_THREADS = 1024;
+static constexpr uint32_t MAX_GPU_THREADS = 1024*160;
 
-using my_clock = std::conditional<std::chrono::high_resolution_clock::is_steady,
-    std::chrono::high_resolution_clock, std::chrono::steady_clock>::type;
+struct work_item_struct {
 
-template <class R>
-double compute_work_item_cost(R r) {
+    atomic<int> cpu_keep_going                    = ATOMIC_VAR_INIT(0);
+    unsigned char pad3[4096]                      = {0};
+    atomic<int> gpu_keep_going                    = ATOMIC_VAR_INIT(0);
+    unsigned char pad35[4096]                     = {0};
+    atomic<uint64_t> cpu_count[MAX_CPU_THREADS]   = {ATOMIC_VAR_INIT(0)};
+    unsigned char pad4[4096]                      = {0};
+    atomic<uint64_t> gpu_count[MAX_GPU_THREADS]   = {ATOMIC_VAR_INIT(0)};
+    unsigned char pad5[4096]                      = {0};
 
-    auto start = my_clock::now();
+    __test_abi int do_it(uint32_t index, bool is_cpu) {
 
-    //perform work
-    for (int i = 0; i < measure_count; ++i) r.discard(1);
-
-    auto end = my_clock::now();
-    auto delta = end - start;
-    auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count();
-
-    return count / double(measure_count);
-}
-
-class run {
-    std::atomic<bool> go, stop;
-    std::atomic<int> running, iterations;
-public:
-    run() : go(false), stop(false), running(0), iterations(0) { }
-    struct report {
-        double wall_time, user_time, system_time;
-        std::uint64_t steps;
-    };
-    template <class F>
-    report time(std::ostream& log, int threads, F f, std::uint64_t target_count) {
-        std::random_device d;
-        for (int i = 0; i < threads; ++i) {
-            auto s = d();
-            std::thread([&, f, i, s]() mutable {
-                std::mt19937 r;
-                r.seed(s);
-                set_affinity(i);
-                running++;
-                while (go != true) std::this_thread::yield();
-                for (int my_iterations = 0; stop.load(std::memory_order_relaxed) != true; ++my_iterations) {
-                    f(i, r);
-                    iterations.fetch_add(1, std::memory_order_relaxed);
-                }
-                running--;
-            }).detach();
+        if (is_cpu) {
+            cpu_count[index].fetch_add(1, std::memory_order_relaxed);
+            return cpu_keep_going.load(std::memory_order_relaxed);
         }
-        while (running != threads) std::this_thread::yield();
-        go = true;
-        auto cpu_start = get_cpu_time();
-        auto start = my_clock::now();
-        std::uint64_t it1 = iterations;
-        if (threads)
-            std::this_thread::sleep_for(std::chrono::milliseconds(uint64_t(1000 * time_target_in_seconds)));
         else {
-            std::mt19937 r;
-            for (std::uint64_t i = 0; i < target_count; ++i) {
-                f(0, r);
-                iterations.fetch_add(1, std::memory_order_relaxed);
-            }
+            gpu_count[index].fetch_add(1, std::memory_order_relaxed);
+            return gpu_keep_going.load(std::memory_order_relaxed);
         }
-        std::uint64_t it2 = iterations;
-        auto end = my_clock::now();
-        auto cpu_end = get_cpu_time();
-        log << "Done, canceling threads...\r" << std::flush;
-        stop = true;
-        while (running != 0) std::this_thread::yield();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        report r;
-        r.wall_time = double(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count());
-        r.user_time = user_time_consumed(cpu_start, cpu_end);
-        r.system_time = system_time_consumed(cpu_start, cpu_end);
-        r.steps = (it2 - it1);
-
-        return r;
+    
     }
 };
 
-template <class F>
-double do_run(std::ostream& csv, std::ostream& log, std::string const& what, int threads, F f, int count, double cost)
-{
-    log << "Measuring " << what << " (" << threads << "T, " << time_target_in_seconds
-        << "s, step = " << count << " x " << cost << " ns)" << std::endl;
-
-    auto expected = count * cost;
-    auto r = run().time(log, threads, f, std::uint64_t(time_target_in_seconds * 1E9 / expected));
-    log << std::right << std::setfill(' ') << std::setw(20) <<
-        "total progress : " << r.steps << " steps in " << r.wall_time << "ns" << std::endl;
-
-    auto wall_time = r.wall_time / r.steps;
-    auto user_time = r.user_time / r.steps;
-    auto system_time = r.system_time / r.steps;
-    auto cpu_time = user_time + system_time;
-    /*
-    std::cout << std::right << std::setfill(' ') << std::setw(20) <<
-    "expected : " << expected << " ns/step" << std::endl;
-
-    std::cout << std::right << std::setfill(' ') << std::setw(20) <<
-    "real : " << wall_time << " ns/step (" << wall_time / expected * 100 << "%)" << std::endl;
-
-    std::cout << std::right << std::setfill(' ') << std::setw(20) <<
-    "cpu : " << cpu_time << " ns/step (" << cpu_time / expected * 100 << "%)" << std::endl;
-    */
-    log << std::right << std::setfill(' ') << std::setw(20) <<
-        "[user : " << user_time / cpu_time * 100 << "%]" << std::endl;
-    log << std::right << std::setfill(' ') << std::setw(20) <<
-        "[system : " << system_time / cpu_time * 100 << "%]" << std::endl;
-
-    log << std::endl;
-
-    csv << "\"" << what << "\"," << threads << ',' << r.steps << ',' << r.wall_time << ',' << expected << ','
-        << wall_time / expected << ',' << cpu_time / expected << ',' << user_time / cpu_time << ',' << system_time / cpu_time << std::endl;
-
-    return wall_time / count;
+work_item_struct* allocate_work_item() {
+    work_item_struct* h;
+#ifdef __NVCC__
+    if(cap < 6)
+        cudaHostAlloc(&h, sizeof(work_item_struct), 0);
+    else {
+        cudaMallocManaged(&h, sizeof(work_item_struct));
+        cudaMemAdvise(h, sizeof(work_item_struct), cudaMemAdviseSetPreferredLocation, 0);
+    }
+#else
+    h = (work_item_struct*)malloc(sizeof(work_item_struct));
+#endif
+    new (h) work_item_struct();
+    return h;
 }
 
-int main(int, const char *[]) {
+void free_work_item(work_item_struct* h) {
+#ifdef __NVCC__
+    if(cap < 6)
+        cudaFreeHost(h);
+    else
+        cudaFree(h);
+#else
+    free(h);
+#endif
+}
 
-    //    time_target_in_seconds = 0.5;
+double work_item_cpu_cost_in_us = 0.0,
+       work_item_gpu_cost_in_us = 0.0;
 
-#ifdef EXTRA_LOCKS
-    WTF::initializeThreading();
+#define DEBUG_PRINT(x) std::cout << #x " = " << x << std::endl
+
+double report(work_item_struct const& work_item_state, time_record tr, char const* lname, char const* sname, 
+              uint32_t c_threads, uint32_t g_threads, bool contended, uint64_t cpu_work_item_count, uint64_t gpu_work_item_count, bool barrier) {
+
+  auto const cpu_mean = c_threads ? std::accumulate(work_item_state.cpu_count, work_item_state.cpu_count + c_threads, 0ull) / c_threads : 0;
+  auto const gpu_mean = g_threads ? std::accumulate(work_item_state.gpu_count, work_item_state.gpu_count + g_threads, 0ull) / g_threads : 0;
+  auto const cpu_mean_sections = cpu_mean / cpu_work_item_count;
+  auto const gpu_mean_sections = gpu_mean / gpu_work_item_count;
+  auto const total_mean_sections = (std::accumulate(work_item_state.cpu_count, work_item_state.cpu_count + c_threads, 0ull) / cpu_work_item_count 
+                                    + std::accumulate(work_item_state.gpu_count, work_item_state.gpu_count + g_threads, 0ull) / gpu_work_item_count) 
+                                 / (c_threads + g_threads);
+
+  auto const max_v = (std::numeric_limits<uint64_t>::max)();
+  auto const min_f = [](uint64_t a, uint64_t b){ return (std::min)(a,b); };
+  auto const cpu_min = std::accumulate(work_item_state.cpu_count, work_item_state.cpu_count + c_threads, max_v, min_f);
+  auto const gpu_min = std::accumulate(work_item_state.gpu_count, work_item_state.gpu_count + g_threads, max_v, min_f);
+  auto const cpu_min_sections = cpu_min / cpu_work_item_count;
+  auto const gpu_min_sections = gpu_min / gpu_work_item_count;
+  auto const total_min_sections = min_f(cpu_min_sections, gpu_min_sections);
+
+  auto const min_v = (std::numeric_limits<uint64_t>::min)();
+  auto const max_f = [](uint64_t a, uint64_t b){ return (std::max)(a,b); };
+  auto const cpu_max = std::accumulate(work_item_state.cpu_count, work_item_state.cpu_count + c_threads, min_v, max_f);
+  auto const gpu_max = std::accumulate(work_item_state.gpu_count, work_item_state.gpu_count + g_threads, min_v, max_f);
+  auto const cpu_max_sections = cpu_max / cpu_work_item_count;
+  auto const gpu_max_sections = gpu_max / gpu_work_item_count;
+  auto const total_max_sections = max_f(cpu_max_sections, gpu_max_sections);
+
+  auto const cpu_count = std::accumulate(work_item_state.cpu_count, work_item_state.cpu_count + c_threads, 0ull);
+  auto const gpu_count = std::accumulate(work_item_state.gpu_count, work_item_state.gpu_count + g_threads, 0ull);
+  auto const cpu_sum_sections = cpu_count / cpu_work_item_count;
+  auto const gpu_sum_sections = gpu_count / gpu_work_item_count;
+  auto const total_sum_sections = cpu_sum_sections + gpu_sum_sections;
+  auto const cpu_avg_sections = c_threads ? std::ceil(1.0 * cpu_sum_sections / c_threads) : 0;
+  auto const gpu_avg_sections = g_threads ? std::ceil(1.0 * gpu_sum_sections / g_threads) : 0;
+  auto const total_avg_sections = std::ceil(1.0 * total_sum_sections / (c_threads + g_threads));
+
+  auto cpct = c_threads ? 100.0 * cpu_min_sections / cpu_mean_sections : 100.0;
+  auto gpct = g_threads ? 100.0 * gpu_min_sections / gpu_mean_sections : 100.0;
+  auto fpct = 100.0 * total_min_sections / total_mean_sections;
+  auto upct = 100.0*tr.user_time/(tr.user_time+tr.system_time);
+  if(std::isnan(upct))
+    upct = 100;
+
+  auto const cpu_sections = barrier ? cpu_avg_sections : cpu_sum_sections;
+  auto const gpu_sections = barrier ? gpu_avg_sections : gpu_sum_sections;
+  auto const count = barrier ? (std::max)(cpu_avg_sections, gpu_avg_sections) : cpu_sections + gpu_sections;
+
+  auto const rate = count * 1000000.0 / tr.us.count();
+  auto const latency = (barrier || contended ? 1 : c_threads + g_threads) / rate;
+
+  auto const sequential_time_in_us = cpu_sum_sections * cpu_work_item_count * work_item_cpu_cost_in_us + 
+                                     gpu_sum_sections * gpu_work_item_count * work_item_gpu_cost_in_us;
+  auto const parallel_time_in_us = max_f(uint64_t(cpu_avg_sections * cpu_work_item_count * work_item_cpu_cost_in_us),
+                                         uint64_t(gpu_avg_sections * gpu_work_item_count * work_item_gpu_cost_in_us));
+  auto const theory_time_in_us = (contended ? sequential_time_in_us : parallel_time_in_us);
+
+  auto const overhead = tr.us.count() / theory_time_in_us;
+
+  std::cout << std::setprecision(2);
+  std::cout << std::setw(25) << lname
+            << std::setw(15) << sname
+            << std::setw(5) << c_threads
+            << std::setw(10) << std::scientific << double(cpu_sections)
+            << std::setw(10) << std::scientific << double(cpu_count)
+            << std::setw(4) << int(cpct) << '%'
+            << std::setw(10) << g_threads
+            << std::setw(10) << std::scientific << double(gpu_sections)
+            << std::setw(10) << std::scientific << double(gpu_count)
+            << std::setw(4) << int(gpct) << '%'
+            << std::setw(9) << std::fixed << tr.us.count()/1E6 << 's'
+            << std::setw(9) << std::fixed << tr.user_time << 's'
+            << std::setw(4) << int(upct) << '%'
+            << std::setw(10) << std::scientific << rate 
+            << std::setw(10) << std::scientific << latency 
+            << std::setw(9) << std::fixed << overhead << 'x' 
+            << std::setw(4) << int(fpct) << '%' << std::endl;
+  csv << std::scientific << std::setprecision(3);
+  csv << lname << ','
+      << sname << ','
+      << c_threads << ','
+      << cpu_sections << ','
+      << cpu_count << ','
+      << cpct << ','
+      << g_threads << ','
+      << gpu_sections << ','
+      << gpu_count << ','
+      << gpct << ','
+      << tr.us.count()/1E6 << ','
+      << tr.user_time << ','
+      << upct << ','
+      << rate << ','
+      << latency << ','
+      << overhead << ','
+      << fpct << std::endl;
+
+    return overhead;
+}
+
+template<class F>
+time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, uint32_t gthreads) {
+
+    assert(cthreads <= MAX_CPU_THREADS);
+    assert(gthreads <= MAX_GPU_THREADS);
+
+    uint32_t const basetime = 3; // seconds, will get used for the real timer and the kill timer
+
+    std::atomic<bool> kill{ true }, killed{ false };
+    std::thread killer([&]() {
+        for (int i = 0; i < 100; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100*basetime));
+            if (!kill.load())
+                return;
+        }
+        work_item_state.gpu_keep_going = 0;
+        work_item_state.cpu_keep_going = 0;
+        killed = true;
+    });
+
+    thread* const threads = (thread*)malloc(sizeof(thread)*cthreads);
+
+    work_item_state.gpu_keep_going = 2;
+    work_item_state.cpu_keep_going = 2;
+
+#ifdef __NVCC__
+    if(cap >= 6)
+      cudaMemAdvise(&work_item_state, sizeof(work_item_state), cudaMemAdviseSetPreferredLocation, 0);
 #endif
 
-    std::ostringstream nullstream;
-    std::ofstream csv("output.csv");
-    if (!csv) {
-        std::cout << "ERROR: could not open the output file." << std::endl;
-        return 0;
+    auto const start = std::make_pair(std::chrono::steady_clock::now(), get_cpu_time());
+    atomic_signal_fence(std::memory_order_seq_cst);
+    for (uint32_t c = 0; c < cthreads; ++c)
+      new (&threads[c]) thread([=]() {
+        set_affinity(c);
+#ifndef _MSC_VER
+        #pragma nounroll
+#endif
+        while(f(c, true))
+          ;
+      });
+
+    auto a = start_gpu_threads(gthreads, [=] __test_abi(uint32_t c) {
+#ifndef _MSC_VER
+    #pragma nounroll
+#endif
+      while(f(c, false))
+        ;
+    });
+
+    std::this_thread::sleep_for(std::chrono::seconds(basetime));
+
+    work_item_state.gpu_keep_going = 1;
+    work_item_state.cpu_keep_going = 1;
+    for (uint32_t c = 0; c < cthreads; ++c)
+        threads[c].join();
+    stop_gpu_threads(a);
+
+    kill = false;
+    killer.join();
+    if (killed)
+        std::cout << "KILLED" << std::endl;
+
+    atomic_signal_fence(std::memory_order_seq_cst);
+    auto const end = std::make_pair(std::chrono::steady_clock::now(), get_cpu_time());
+
+    free(threads);
+
+    return time_record{ std::chrono::duration_cast<std::chrono::microseconds>(end.first - start.first),
+                        user_time_consumed(start.second, end.second), 
+                        system_time_consumed(start.second, end.second) };
+}
+
+std::string onlyscenario;
+
+static const std::string calibration_s = "-calibration-";
+
+template<class F>
+void run_scenario(F f, uint32_t& count, double& product, uint64_t target_duration_in_us, char const* lockname, char const* scenarioname, uint32_t cthreads, uint32_t gthreads, bool contended) {
+
+  if(lockname != calibration_s && !onlyscenario.empty() && onlyscenario != scenarioname)
+    return;
+
+  auto const gpu_work_item_count = work_item_gpu_cost_in_us ? uint64_t(gthreads && target_duration_in_us ? std::ceil(target_duration_in_us / work_item_gpu_cost_in_us) : 1) : 10000;
+  auto const target_cpu_duration = gthreads ? gpu_work_item_count * work_item_gpu_cost_in_us : target_duration_in_us;
+  auto const cpu_work_item_count = work_item_cpu_cost_in_us ? uint64_t(cthreads && target_cpu_duration ? std::ceil(target_cpu_duration / work_item_cpu_cost_in_us) : 1) : 10000;
+
+  work_item_struct* const wi = allocate_work_item();
+
+  auto g = [=] __test_abi (uint32_t index, bool is_cpu) -> bool {
+    auto const work_item_count = is_cpu ? cpu_work_item_count : gpu_work_item_count;
+    auto const t = f(index, is_cpu);
+    t->lock(); 
+    int keep_going_state = 2;
+#ifndef _MSC_VER
+    #pragma nounroll
+#endif
+    for (uint64_t j = 0; j < work_item_count && keep_going_state > 0; ++j)
+        keep_going_state = wi->do_it(index, is_cpu);
+    t->unlock();
+    return keep_going_state > 1;
+  };
+  auto const tr = run_core(*wi, g, cthreads, gthreads);
+
+  if(work_item_cpu_cost_in_us == 0.0 && cthreads)
+    work_item_cpu_cost_in_us = tr.us.count() / double(std::accumulate(wi->cpu_count, wi->cpu_count + cthreads, 0ull));
+  if(work_item_gpu_cost_in_us == 0.0 && gthreads)
+    work_item_gpu_cost_in_us = tr.us.count() / double(std::accumulate(wi->gpu_count, wi->gpu_count + gthreads, 0ull));
+
+  product *= report(*wi, tr, lockname, scenarioname, cthreads, gthreads, contended, cpu_work_item_count, gpu_work_item_count, false);
+  count += 1;
+
+  free_work_item(wi);
+}
+
+void* allocate_heap(size_t s) {
+    void* h;
+    #ifdef __NVCC__
+        if(cap < 6)
+            cudaHostAlloc(&h, s, 0);
+        else {
+            cudaMallocManaged(&h, s);
+            cudaMemAdvise(h, s, cudaMemAdviseSetPreferredLocation, 0);
+        }
+    #else
+        h = malloc(s);
+    #endif
+    memset(h, 0, s);
+    return h;
+}
+
+void free_heap(void* h) {
+#ifdef __NVCC__
+    if(cap < 6)
+        cudaFreeHost(h);
+    else
+        cudaFree(h);
+#else
+    free(h);
+#endif
+}
+
+template<class T>
+void run_scenario_singlethreaded(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
+
+    void* heap = allocate_heap(sizeof(T)+alignof(T));
+    T* t = new (heap) T;
+
+    auto f = [=] __test_abi (uint32_t, bool) -> T* {
+        return t;
+    };
+    run_scenario(f, count, product, 0, lockname, "singlethreaded", cthreads, gthreads, false);
+
+    t->~T();
+    free_heap(heap);
+}
+
+static constexpr int uncontended_count = 1<<20;
+
+template<class T>
+void run_scenario_uncontended(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
+
+    void* heap = allocate_heap(uncontended_count*sizeof(T) + alignof(T));
+    T* t = new (heap) T[uncontended_count];
+
+    assert(cthreads + gthreads <= uncontended_count);
+    auto f = [=] __test_abi (uint32_t index, bool is_cpu) -> T* {
+        if (is_cpu)
+            return t + index;
+        else
+            return t + uncontended_count - 1 - index;
+    };
+
+    run_scenario(f, count, product, 0, lockname, "uncontended", cthreads, gthreads, false);
+
+    for(size_t i = 0; i < uncontended_count; ++i)
+        t[i].~T();
+    free_heap(heap);
+}
+
+template<class T>
+void run_scenario_shortest(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
+
+    void* heap = allocate_heap(sizeof(T) + alignof(T));
+    T* t = new (heap) T;
+
+    auto f = [=] __test_abi (uint32_t, bool) -> T* {
+        return t;
+    };
+    run_scenario(f, count, product, 0, lockname, "shortest", cthreads, gthreads, true);
+
+    t->~T();
+    free_heap(heap);
+}
+
+template<class T>
+void run_scenario_short(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
+
+    void* heap = allocate_heap(sizeof(T) + alignof(T));
+    T* t = new (heap) T;
+
+    auto f = [=] __test_abi (uint32_t, bool) -> T* {
+        return t;
+    };
+    run_scenario(f, count, product, 1, lockname, "short", cthreads, gthreads, true);
+
+    t->~T();
+    free_heap(heap);
+}
+
+template<class T>
+void run_scenario_long(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
+  
+    void* heap = allocate_heap(sizeof(T) + alignof(T));
+    T* t = new (heap) T;
+
+    auto f = [=] __test_abi (uint32_t, bool) -> T* {
+        return t;
+    };
+    run_scenario(f, count, product, 100, lockname, "long", cthreads, gthreads, true);
+
+    t->~T();
+    free_heap(heap);
+}
+
+template<class T>
+void run_scenario_barrier(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
+
+    if (!onlyscenario.empty() && onlyscenario != "phaser")
+        return;
+
+    void* heap = allocate_heap(sizeof(T) + alignof(T));
+    T* t = new (heap) T(cthreads + gthreads);
+
+    work_item_struct* const wi = allocate_work_item();
+
+    auto g = [=] __test_abi(uint32_t index, bool is_cpu) -> bool {
+        auto const ret = wi->do_it(index, is_cpu) > 1;
+        if (ret)
+            t->arrive_and_wait();
+        else
+            t->arrive_and_drop();
+        return ret;
+    };
+    auto const tr = run_core(*wi, g, cthreads, gthreads);
+    product *= report(*wi, tr, lockname, "phaser", cthreads, gthreads, false, 1, 1, true);
+    count += 1;
+
+    free_work_item(wi);
+    t->~T();
+    free_heap(heap);
+}
+
+uint32_t onlycpu = ~0u, onlygpu = ~0u;
+
+std::string onlylock;
+
+template<class F>
+void run_scenarios_inner(char const* lockname, F f) {
+
+    if (lockname != calibration_s && !onlylock.empty() && onlylock != lockname)
+        return;
+
+    uint32_t const hc = std::thread::hardware_concurrency();
+    uint32_t const cthreads[] = { 0, 1, hc >> 2, hc >> 1, (hc >> 2) + (hc >> 1), hc };
+    uint32_t const maxg = max_gpu_threads();
+    uint32_t const ming = maxg ? 1 : 0;
+    uint32_t const lowg = maxg >> (cap >= 7 ? 5+4 : 4);
+    uint32_t const midg = maxg >> (cap >= 7 ? 5 : 4);
+    uint32_t const gthreads[] = { 0, ming, lowg >> 1, lowg, midg, maxg };
+
+    std::set<std::pair<uint32_t, uint32_t>> s;
+    for (uint32_t c : cthreads) {
+        for (uint32_t g : gthreads) {
+            if (lockname != calibration_s) {
+                if (onlycpu != ~0u) c = onlycpu;
+                if (onlygpu != ~0u) g = onlygpu;
+            }
+            auto const p = std::make_pair(c, g);
+            if (s.find(p) != s.end())
+                continue;
+            s.insert(p);
+            f(c, g);
+        }
     }
+}
 
-    csv << "name, threads, steps, time, expected, real/expected, cpu/expected, user/cpu, system/cpu" << std::endl;
+template<class T, typename std::enable_if<std::is_same<T, barrier>::value, int>::type = 0>
+void run_scenarios(char const* lockname, uint32_t& count, double& product) {
+    return run_scenarios_inner(lockname, [&](int c, int g) {
+        switch (c + g) {
+        default:
+            run_scenario_barrier<T>(lockname, count, product, c, g);
+        case 0:
+            ;
+        }
+    });
+}
+    
+template<class T, typename std::enable_if<!std::is_same<T, barrier>::value, int>::type = 0>
+void run_scenarios(char const* lockname, uint32_t& count, double& product) {
 
-    std::mt19937 r;
-    std::mutex m1;
-    typedef binary_semaphore_lock test_mutex_1;
-    test_mutex_1 m2;
+    return run_scenarios_inner(lockname, [&](int c, int g) {
+        switch (c + g) {
+        case 1:
+            run_scenario_singlethreaded<T>(lockname, count, product, c, g);
+        case 0:
+            break;
+        default:
+            run_scenario_uncontended<T>(lockname, count, product, c, g);
+            run_scenario_shortest<T>(lockname, count, product, c, g);
+            run_scenario_short<T>(lockname, count, product, c, g);
+            run_scenario_long<T>(lockname, count, product, c, g);
+        }
+    });
+}
 
-#ifdef EXTRA_LOCKS
-#define HAS_LOCK_2
-    typedef WTF::Lock test_mutex_2;
-    //#else
-    //    typedef webkit_mutex test_mutex_2;
-#endif
+template<class T>
+void run_and_report_scenarios(char const* lockname, uint32_t& count, double& product) {
 
-#define HAS_LOCK_2
-typedef binary_semaphore_lock2 test_mutex_2;
+    uint32_t count_ = 0; 
+    double product_ = 1.0;
 
-#ifdef HAS_LOCK_2
-    test_mutex_2 m3;
-#endif
+    run_scenarios<T>(lockname, count_, product_);
+    if(count_)
+      std::cout << "== " << lockname << " : " << std::fixed << std::setprecision(0) << 10000/std::pow(product_, 1.0/count_) << " lockmarks ==" << std::endl;
+    
+    count += count_;
+    product *= product_;
+}
 
-    auto const N = std::thread::hardware_concurrency();
-    assert(N <= 1024);
+#define run_and_report_scenarios(x,c,s) run_and_report_scenarios<x>(#x,c,s)
 
-    // CONTROL FOR 1-THREAD
+struct null_mutex {
 
-    std::cout << "Warming up...\r" << std::flush;
-    compute_work_item_cost(r);
-    auto cost = compute_work_item_cost(r);
-    auto target_count = std::max(1, int(10E2 / cost));
-    cost = do_run(nullstream, std::cout, "CONTROL run for 1-thread", 1, [=](int, std::mt19937&) mutable {
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-    std::cout << "Adjusting cost to " << cost << " ns/iteration (targeting " << target_count << " iterations/step).\n";
-    std::cout << std::endl;
+  __test_abi void lock() { }
+  __test_abi void unlock() { }
 
-    // SINGLE THREADED
+};
 
-    auto std_single_threaded = do_run(csv, std::cout, "std::mutex single-threaded", 1, [=, &m1](int, std::mt19937&) mutable {
-        { std::unique_lock<std::mutex>(m1); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-    auto ttas_single_threaded = do_run(csv, std::cout, "ttas_mutex single-threaded", 1, [=, &m2](int, std::mt19937&) mutable {
-        { std::unique_lock<test_mutex_1>(m2); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-#ifdef HAS_LOCK_2
-    std_single_threaded = do_run(csv, std::cout, "trial_mutex single-threaded", 1, [=, &m2](int, std::mt19937&) mutable {
-        { std::unique_lock<test_mutex_2>(m3); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-#endif
+void run_calibration() {
 
-    // CONTROL FOR N-THREAD
+  uint32_t count = 0;
+  double product = 1.0;
 
-    auto cost_n = do_run(nullstream, std::cout, "CONTROL for uncontended N-thread", N, [=](int, std::mt19937&) mutable {
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-    if (cost_n < cost)
-        std::cout << "NOTE: Based purely on these numbers, your system appears to have hyper-threads enabled.\n";
-    cost = cost_n;
-    std::cout << "Adjusting cost to " << cost << " ns/iteration (targeting " << target_count << " iterations/step).\n";
-    std::cout << std::endl;
-
-    //
-
-    std::mutex m1N[1024];
-    test_mutex_1 m2N[1024];
-#ifdef HAS_LOCK_2
-    test_mutex_2 m3N[1024];
-#endif
-
-
-    // NO CONTENTION
-
-    auto std_no_contention = do_run(csv, std::cout, "std::mutex no contention", N, [=, &m1N](int i, std::mt19937&) mutable {
-        auto& m = m1N[i];
-        { std::unique_lock<std::mutex> l(m); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-    auto ttas_no_contention = do_run(csv, std::cout, "ttas_mutex no contention", N, [=, &m2N](int i, std::mt19937&) mutable {
-        auto& m = m2N[i];
-        { std::unique_lock<test_mutex_1> l(m); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-#ifdef HAS_LOCK_2
-    std_no_contention = do_run(csv, std::cout, "trial_mutex no contention", N, [=, &m3N](int i, std::mt19937&) mutable {
-        auto& m = m3N[i];
-        { std::unique_lock<test_mutex_2> l(m); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-#endif
-
-    // LOW-P CONTENTION
-
-    {
-        std::random_device d;
-        if (d.entropy() == 0)
-            std::cout << "NOTE: the system randomness source claims to have no entropy, low-p tests may not operate correctly." << std::endl;
-        std::cout << std::endl;
+  return run_scenarios_inner(calibration_s.c_str(), [&](int c, int g) {
+    switch (c + g) {
+      case 1:
+        run_scenario_singlethreaded<null_mutex>(calibration_s.c_str(), count, product, c, g);
+      default:
+        ;
     }
-    auto mask = (4 << std::ilogb(N)) - 1;
-    auto std_rare = do_run(csv, std::cout, "std::mutex rare contention", N, [=, &m1N](int, std::mt19937& dr) mutable {
-        auto& m = m1N[dr() & mask];
-        { std::unique_lock<std::mutex> l(m); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-    auto ttas_rare = do_run(csv, std::cout, "ttas_mutex rare contention", N, [=, &m2N](int, std::mt19937& dr) mutable {
-        auto& m = m2N[dr() & mask];
-        { std::unique_lock<test_mutex_1> l(m); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
-#ifdef HAS_LOCK_2
-    std_rare = do_run(csv, std::cout, "trial_mutex rare contention", N, [=, &m3N](int, std::mt19937& dr) mutable {
-        auto& m = m3N[dr() & mask];
-        { std::unique_lock<test_mutex_2> l(m); }
-        for (int i = 0; i < target_count; ++i) r.discard(1);
-    }, target_count, cost);
+  });
+
+#ifdef __NVCC__
+//  run_scenario_singlethreaded<null_mutex>("-calibration-", count, product, 0, 1);
 #endif
+//  run_scenario_singlethreaded<null_mutex>("-calibration-", count, product, 1, 0);
+}
 
-    // SHORTEST
+int main(int argc, char const* argv[]) {
 
-    auto shortest_count = 1;
-    auto std_shortest = do_run(csv, std::cout, "std::mutex shortest sections", N, [=, &m1](int, std::mt19937&) mutable {
-        std::unique_lock<std::mutex> l(m1);
-        r.discard(1);
-    }, shortest_count, cost);
-    auto ttas_shortest = do_run(csv, std::cout, "ttas_mutex shortest sections", N, [=, &m2](int, std::mt19937&) mutable {
-        std::unique_lock<test_mutex_1> l(m2);
-        r.discard(1);
-    }, shortest_count, cost);
-#ifdef HAS_LOCK_2
-    std_shortest = do_run(csv, std::cout, "trial_mutex shortest sections", N, [=, &m3](int, std::mt19937&) mutable {
-        std::unique_lock<test_mutex_2> l(m3);
-        r.discard(1);
-    }, shortest_count, cost);
+  static const std::string onlycpu_s = "--cpu", 
+    onlygpu_s = "--gpu",
+    onlyscenario_s = "--scenario", 
+    onlylock_s = "--lock",
+    device_s = "--device";
+
+  for(int i = 1; i < argc; ++i) {
+    if(argv[i] == onlygpu_s) onlygpu = std::stoi(argv[++i]);
+    else if(argv[i] == onlycpu_s) onlycpu = std::stoi(argv[++i]);
+    else if(argv[i] == device_s) dev = std::stoi(argv[++i]);
+    else if(argv[i] == onlyscenario_s) onlyscenario = argv[++i];
+    else if(argv[i] == onlylock_s) onlylock = argv[++i];
+    else {
+        std::cout << "ERROR, unknown argument: " << argv[i] << std::endl; 
+        return -1;
+    }
+  }
+
+  std::cout << std::setw(25) << "lock"
+            << std::setw(15) << "scenario"
+            << std::setw(5) << "cpu" 
+            << std::setw(10) << "sections"
+            << std::setw(10) << "items"
+            << std::setw(5) << "fair"
+            << std::setw(10) << "gpu"
+            << std::setw(10) << "sections"
+            << std::setw(10) << "items"
+            << std::setw(5) << "fair"
+            << std::setw(10) << "walltime"
+            << std::setw(10) << "cputime"
+            << std::setw(5)  << "u:s"
+            << std::setw(10) << "rate" 
+            << std::setw(10) << "latency" 
+            << std::setw(10) << "overhead" 
+            << std::setw(5) << "fair"
+            << std::endl;
+  csv << "lock,"
+      << "scenario,"
+      << "cpu,"
+      << "sections,"
+      << "items,"
+      << "fair,"
+      << "gpu,"
+      << "sections,"
+      << "items,"
+      << "fair,"
+      << "walltime,"
+      << "cputime,"
+      << "u:s,"
+      << "rate,"
+      << "latency,"
+      << "overhead,"
+      << "fair,"
+      << std::endl;
+
+  uint32_t count = 0; 
+  double product = 1.0;
+
+  run_calibration();
+
+#ifndef __NVCC__
+  run_and_report_scenarios(mutex, count, product);
 #endif
-
-    // SHORT
-
-    auto short_count = int(2E2 / cost);
-    auto std_short = do_run(csv, std::cout, "std::mutex short sections", N, [=, &m1](int, std::mt19937&) mutable {
-        std::unique_lock<std::mutex> l(m1);
-        for (int i = 0; i < short_count; ++i) r.discard(1);
-    }, short_count, cost);
-    auto ttas_short = do_run(csv, std::cout, "ttas_mutex short sections", N, [=, &m2](int, std::mt19937&) mutable {
-        std::unique_lock<test_mutex_1> l(m2);
-        for (int i = 0; i < short_count; ++i) r.discard(1);
-    }, short_count, cost);
-#ifdef HAS_LOCK_2
-    std_short = do_run(csv, std::cout, "trial_mutex short sections", N, [=, &m3](int, std::mt19937&) mutable {
-        std::unique_lock<test_mutex_2> l(m3);
-        for (int i = 0; i < short_count; ++i) r.discard(1);
-    }, short_count, cost);
-#endif
-
-    // LONG
-
-    auto long_count = int(1E7 / cost);
-    auto std_long = do_run(csv, std::cout, "std::mutex long sections", N, [=, &m1](int, std::mt19937&) mutable {
-        std::unique_lock<std::mutex> l(m1);
-        for (int i = 0; i < long_count; ++i) r.discard(1);
-    }, long_count, cost);
-    auto ttas_long = do_run(csv, std::cout, "ttas_mutex long sections", N, [=, &m2](int, std::mt19937&) mutable {
-        std::unique_lock<test_mutex_1> l(m2);
-        for (int i = 0; i < long_count; ++i) r.discard(1);
-    }, long_count, cost);
-#ifdef HAS_LOCK_2
-    std_long = do_run(csv, std::cout, "trial_mutex long sections", N, [=, &m3](int, std::mt19937&) mutable {
-        std::unique_lock<test_mutex_2> l(m3);
-        for (int i = 0; i < long_count; ++i) r.discard(1);
-    }, long_count, cost);
-#endif
-
-    //
-
-    std::cout << "\n\n == REPORT == \n\n";
-    std::cout << "single-thread, " << std_single_threaded / ttas_single_threaded << std::endl;
-    std::cout << "uncontended, " << std_no_contention / ttas_no_contention << std::endl;
-    std::cout << "rare, " << std_rare / ttas_rare << std::endl;
-    std::cout << "shortest, " << std_shortest / ttas_shortest << std::endl;
-    std::cout << "short, " << std_short / ttas_short << std::endl;
-    std::cout << "long, " << std_long / ttas_long << std::endl;
-
-    return 0;
+  run_and_report_scenarios(binary_semaphore_lock, count, product);
+  run_and_report_scenarios(counting_semaphore_lock, count, product);
+  if(!onlylock.empty()) {
+    run_and_report_scenarios(null_mutex, count, product);
+    run_and_report_scenarios(atomic_wait_lock, count, product);
+    run_and_report_scenarios(dumb_mutex, count, product);
+    run_and_report_scenarios(barrier, count, product);
+  }
+  std::cout << "== total : " << std::fixed << std::setprecision(0) << 10000/std::pow(product, 1.0/count) << " lockmarks ==" << std::endl;
 }
