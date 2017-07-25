@@ -186,7 +186,7 @@ __semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order order) n
     count_type old = atom.fetch_add(__contbit, std::memory_order_acquire);
     count_type const tick = ticket.fetch_add(1, std::memory_order_relaxed);
     count_type distance = tick - tocket.load(std::memory_order_relaxed);
-    count_type const max_distance = std::numeric_limits<count_type>::max() >> 1;
+    count_type const max_distance = (std::numeric_limits<count_type>::max)() >> 1;
     for (int i = 0; distance > 0 && distance < max_distance; ++i) {
         if(i < 32)
             details::__semaphore_yield();
