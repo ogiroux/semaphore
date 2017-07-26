@@ -180,48 +180,41 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old, std::memor
 
 __semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order order) noexcept
 {
+    auto const maxdiff = (std::numeric_limits<count_type>::max)() >> 1;
+
     details::__semaphore_exponential_backoff b;
-    count_type old = atom.fetch_add(__contbit, std::memory_order_acquire);
-    count_type const tick = ticket.fetch_add(1, std::memory_order_relaxed);
-    count_type distance = tick - tocket.load(std::memory_order_relaxed);
-    count_type const max_distance = (std::numeric_limits<count_type>::max)() >> 1;
-    for (int i = 0; distance > 0 && distance < max_distance; ++i) {
-        if(i < 40)
+    auto old = atom.fetch_add(__contbit, std::memory_order_acquire);
+    auto const tick = ticket.fetch_add(1, std::memory_order_relaxed);
+    auto tock = tocket.load(std::memory_order_relaxed);
+    auto ready = (tock >= tick || tick - tock > maxdiff);
+    for (int i = 0; ; ++i) {
+        if(i < 64)
             details::__semaphore_yield();
-        else {
+        else 
+        {
 #ifdef __semaphore_fast_path
             old = atom.fetch_or(__slowbit, std::memory_order_acquire) | __slowbit;
-            distance = tick - tocket.load(std::memory_order_relaxed);
-            if (distance > 0 && distance < max_distance)
-                break;
-            details::__semaphore_wait(atom, old);
+            if (!ready || (old & __valubit) != 0)
+                details::__semaphore_wait(atom, old);
 #else
             b.sleep();
-            distance = tick - tocket.load(std::memory_order_relaxed);
 #endif
         }
-    }
-    b.reset();
-    for (int i = 0; ; ++i) {
+        if(!ready) {
+            tock = tocket.load(std::memory_order_relaxed);
+            ready = (tock >= tick || tick - tock > maxdiff);
+            if(ready)
+                b.reset();
+            else
+                continue;
+        }
+        old = atom.load(std::memory_order_relaxed);
         while ((old & __valubit) == 0) {
             old &= ~__lockbit;
             auto next = old - __contbit + __valubit;
             if (atom.compare_exchange_weak(old, next, order, std::memory_order_relaxed))
                 return;
         }
-        if (i < 40)
-            details::__semaphore_yield();
-        else {
-#ifdef __semaphore_fast_path
-            old = atom.fetch_or(__slowbit, std::memory_order_acquire) | __slowbit;
-            if ((old & __valubit) == 0)
-                continue;
-            details::__semaphore_wait(atom, old);
-#else
-            b.sleep();
-#endif
-        }
-        old = atom.load(std::memory_order_relaxed);
     }
 }
 

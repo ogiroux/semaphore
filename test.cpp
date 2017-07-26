@@ -332,7 +332,7 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
     std::atomic<bool> kill{ true }, killed{ false };
     std::thread killer([&]() {
         for (int i = 0; i < 100; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100*basetime));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2*100*basetime));
             if (!kill.load())
                 return;
         }
