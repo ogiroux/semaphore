@@ -155,15 +155,13 @@ inline void __semaphore_wake_all(A &a)
 #ifdef __semaphore_fast_path
 __semaphore_abi void binary_semaphore::__release_slow(count_type old, std::memory_order order, semaphore_notify notify) noexcept
 {
-    atomic_thread_fence(std::memory_order_seq_cst);
     count_type lock = 0;
     do {
         old &= ~__lockbit;
         lock = (old & __slowbit) ? __lockbit : 0;
-    } while (!atom.compare_exchange_weak(old, (old | lock) & ~(__valubit | __slowbit), std::memory_order_relaxed));
+    } while (!atom.compare_exchange_weak(old, (old | lock) & ~(__valubit | __slowbit), order, std::memory_order_relaxed));
     if (lock != 0)
     {
-        atomic_thread_fence(std::memory_order_seq_cst);
         switch (notify)
         {
         case semaphore_notify_all:
@@ -188,12 +186,11 @@ __semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order order) n
     count_type distance = tick - tocket.load(std::memory_order_relaxed);
     count_type const max_distance = (std::numeric_limits<count_type>::max)() >> 1;
     for (int i = 0; distance > 0 && distance < max_distance; ++i) {
-        if(i < 32)
+        if(i < 40)
             details::__semaphore_yield();
         else {
 #ifdef __semaphore_fast_path
-            old = atom.fetch_or(__slowbit, std::memory_order_relaxed) | __slowbit;
-            atomic_thread_fence(std::memory_order_seq_cst);
+            old = atom.fetch_or(__slowbit, std::memory_order_acquire) | __slowbit;
             distance = tick - tocket.load(std::memory_order_relaxed);
             if (distance > 0 && distance < max_distance)
                 break;
@@ -212,14 +209,13 @@ __semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order order) n
             if (atom.compare_exchange_weak(old, next, order, std::memory_order_relaxed))
                 return;
         }
-        if (i < 32)
+        if (i < 40)
             details::__semaphore_yield();
         else {
 #ifdef __semaphore_fast_path
-            old = atom.fetch_or(__slowbit, std::memory_order_relaxed) | __slowbit;
+            old = atom.fetch_or(__slowbit, std::memory_order_acquire) | __slowbit;
             if ((old & __valubit) == 0)
                 continue;
-            atomic_thread_fence(std::memory_order_seq_cst);
             details::__semaphore_wait(atom, old);
 #else
             b.sleep();
