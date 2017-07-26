@@ -87,7 +87,11 @@ struct binary_semaphore
     }
     __semaphore_abi inline void release(semaphore_notify notify, std::memory_order order = std::memory_order_seq_cst) noexcept
     {
+#ifdef __semaphore_cuda
+        tocket.fetch_add(1, std::memory_order_relaxed);
+#else
         tocket.store(tocket.load(std::memory_order_relaxed)+1, std::memory_order_relaxed);
+#endif
 #ifdef __semaphore_fast_path
         count_type old = __valubit;
         if (__semaphore_expect(!atom.compare_exchange_strong(old, 0, order, std::memory_order_relaxed), 0))
