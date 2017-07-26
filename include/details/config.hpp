@@ -224,8 +224,8 @@ using __semaphore_duration = std::chrono::nanoseconds;
 // A simple exponential back-off helper that is designed to cover the space between (1<<__magic_number_3) and __magic_number_4
 struct __semaphore_exponential_backoff
 {
-    static constexpr unsigned max_time = 128;
-    static constexpr unsigned min_time = 1;
+    static constexpr unsigned max_time = 128*64;
+    static constexpr unsigned min_time = 64;
     unsigned time = min_time, time_sum = 0;
 
     __semaphore_abi void reset() {
@@ -239,12 +239,12 @@ struct __semaphore_exponential_backoff
             auto const this_time = time > maximum ? maximum : time;
             time_sum += this_time;
 #if !defined(__CUDA_ARCH__)
-            std::this_thread::sleep_for(std::chrono::microseconds(this_time));
+            std::this_thread::sleep_for(std::chrono::nanoseconds(this_time));
 #elif defined(__has_cuda_nanosleep)
-            __mme_nanosleep(time << 10);
+            __mme_nanosleep(time);
 #endif
         }
-        time += 2 + (time >> 2);
+        time += 64 + (time >> 2);
         if (time > max_time) 
             time = max_time;
     }
