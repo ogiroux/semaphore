@@ -681,7 +681,32 @@ void run_calibration() {
 //  run_scenario_singlethreaded<null_mutex>("-calibration-", count, product, 1, 0);
 }
 
+#ifdef __test_wtf
+
+    #include "config.h"
+
+    #include "ToyLocks.h"
+    #include <thread>
+    #include <unistd.h>
+    #include <wtf/CurrentTime.h>
+    #include <wtf/DataLog.h>
+    #include <wtf/HashMap.h>
+    #include <wtf/Lock.h>
+    #include <wtf/ParkingLot.h>
+    #include <wtf/StdLibExtras.h>
+    #include <wtf/Threading.h>
+    #include <wtf/ThreadingPrimitives.h>
+    #include <wtf/Vector.h>
+    #include <wtf/WordLock.h>
+    #include <wtf/text/CString.h>
+
+#endif
+
 int main(int argc, char const* argv[]) {
+
+#ifdef __test_wtf
+    WTF::initializeThreading();
+#endif
 
   static const std::string onlycpu_s = "--cpu", 
     onlygpu_s = "--gpu",
@@ -745,6 +770,9 @@ int main(int argc, char const* argv[]) {
 
 #ifndef __NVCC__
   run_and_report_scenarios(mutex, count, product);
+#ifdef __test_wtf
+  run_and_report_scenarios(WTF::Lock, count, product);
+#endif
 #endif
   run_and_report_scenarios(binary_semaphore_lock, count, product);
   run_and_report_scenarios(counting_semaphore_lock, count, product);

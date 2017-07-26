@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "atomic": "cpp",
+        "__bit_reference": "cpp",
+        "algorithm": "cpp",
+        "bitset": "cpp",
+        "chrono": "cpp",
+        "map": "cpp",
+        "set": "cpp"
+    }
+}
