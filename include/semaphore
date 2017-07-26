@@ -73,11 +73,7 @@ __semaphore_abi bool atomic_try_wait(const atomic<T> *,V);
 
 struct binary_semaphore
 {
-#ifdef __semaphore_cuda
     using count_type = uint32_t;
-#else
-    using count_type = uint8_t;
-#endif
 
     static constexpr count_type max = 1;
 
