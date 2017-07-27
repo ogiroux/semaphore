@@ -45,6 +45,10 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <fstream>
 #include <cmath>
 
+#ifndef __has_include
+  #define __has_include(x) 0
+#endif
+
 #ifndef __test_abi
   #define __test_abi
   #define __managed__
@@ -118,6 +122,17 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     integer_t count = (1 << cpu);
     thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY, (thread_policy_t)&count, 1);
   }
+
+#if __has_include(<os/lock.h>)
+  #include <os/lock.h>
+  #define HAS_UNFAIR_LOCK 1
+  class unfair_lock {
+    os_unfair_lock l = OS_UNFAIR_LOCK_INIT;
+  public:
+    void lock() { os_unfair_lock_lock(&l); }
+    void unlock() { os_unfair_lock_unlock(&l); }
+  };
+  #endif
 #endif
 
 #ifdef WIN32
@@ -774,6 +789,9 @@ int main(int argc, char const* argv[]) {
 #endif
   run_and_report_scenarios(binary_semaphore_lock, count, product);
   run_and_report_scenarios(counting_semaphore_lock, count, product);
+#ifdef HAS_UNFAIR_LOCK
+  run_and_report_scenarios(unfair_lock, count, product);
+#endif
   if(!onlylock.empty()) {
     run_and_report_scenarios(null_mutex, count, product);
     run_and_report_scenarios(atomic_wait_lock, count, product);
