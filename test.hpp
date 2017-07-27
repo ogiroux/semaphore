@@ -319,9 +319,9 @@ private:
         }
     }
 
-    mutable atomic<uint32_t> atom;
-    mutable atomic<uint32_t> ticket;
-    mutable atomic<uint32_t> tocket;
+    atomic<uint32_t> atom;
+    atomic<uint32_t> ticket;
+    atomic<uint32_t> tocket;
 };
 
 }}}
