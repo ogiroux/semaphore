@@ -768,11 +768,9 @@ int main(int argc, char const* argv[]) {
 
   run_calibration();
 
-#ifndef __NVCC__
   run_and_report_scenarios(mutex, count, product);
 #ifdef __test_wtf
   run_and_report_scenarios(WTF::Lock, count, product);
-#endif
 #endif
   run_and_report_scenarios(binary_semaphore_lock, count, product);
   run_and_report_scenarios(counting_semaphore_lock, count, product);

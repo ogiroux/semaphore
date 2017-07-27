@@ -1495,7 +1495,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
     //#define ATOMIC_FLAG_INIT {0}
 
     // 32.9, fences
-    extern "C" __host__ __device__ inline void __cuda_atomic_thread_fence(std::memory_order order) {
+    extern "C" __host__ __device__ inline void atomic_thread_fence(/*std::memory_order*/ int order) {
 #ifdef __CUDA_ARCH__
         switch (order) {
         case std::memory_order_seq_cst: details::__mme_fence_sc(); break;
@@ -1507,19 +1507,17 @@ namespace cuda { namespace experimental { inline namespace v1 {
         default: assert(0);
         }
 #else
-        std::atomic_thread_fence(order);
+        std::atomic_thread_fence((std::memory_order)order);
 #endif
     }
-    #define atomic_thread_fence __cuda_atomic_thread_fence
 
-    extern "C" __host__ __device__ inline void __cuda_atomic_signal_fence(memory_order order) noexcept {
+    extern "C" __host__ __device__ inline void atomic_signal_fence(/*std::memory_order*/ int order) noexcept {
 #ifdef __CUDA_ARCH__
         details::__mme_fence_signal();
 #else
-        std::atomic_signal_fence(order);
+        std::atomic_signal_fence((std::memory_order)order);
 #endif
     }
-    #define atomic_signal_fence __cuda_atomic_signal_fence
 
 } } }
 

@@ -30,28 +30,26 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
   #warning "Use of all warp threads is TOO iffy without CUDA support for compute_70 or above. Will run 1 thread per warp."
 #endif
 
-#include <cassert>
-
-void* test_malloc( std::size_t count ) { 
-  void* ptr = nullptr;
-  auto ret = cudaMallocManaged(&ptr, count); 
-  assert(ptr && ret == cudaSuccess);
-  return ptr;
-}
-void test_free( void* ptr ) { 
-  auto ret = cudaFree(ptr); 
-  assert(ret == cudaSuccess);
-}
-
 #include <cuda/atomic>
 #include <cuda/semaphore>
+
+#define __test_abi __host__ __device__
+
+#include <cassert>
 #include <mutex>
 #include <thread>
 #include <iostream>
 
+template<class T>
+using atomic = cuda::experimental::atomic<T>;
 using thread = std::thread;
-using mutex = std::mutex;
-using namespace cuda::experimental;
+using binary_semaphore = cuda::experimental::binary_semaphore;
+using counting_semaphore = cuda::experimental::counting_semaphore;
+namespace details = cuda::experimental::details;
+
+#include "test.hpp"
+
+using mutex = cuda::experimental::mutex;
 
 template<class F>
 __global__ void run_gpu_thread(uint32_t count, uint32_t count_per_block, F const* f) {
@@ -109,5 +107,4 @@ unsigned int max_gpu_threads() {
     return max_block_count * 64;
 }
 
-#define __test_abi __host__ __device__
 #include "test.cpp"

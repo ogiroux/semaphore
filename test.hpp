@@ -226,4 +226,77 @@ struct alignas(64) barrier {
     }
 };
 
+#ifdef __NVCC__
+
+namespace cuda { namespace experimental { inline namespace v1 { 
+
+struct mutex
+{
+    __semaphore_abi inline void unlock() noexcept {
+        tocket.fetch_add(1, std::memory_order_relaxed);
+        atom.fetch_and(~__valubit, std::memory_order_release);
+    }
+
+    __semaphore_abi inline void lock(std::memory_order order = std::memory_order_seq_cst) noexcept {
+        uint32_t old = 0;
+        for (int i = 0; i < 64; ++i) {
+            if(__semaphore_expect(atom.compare_exchange_weak(old = 0, __valubit, order, std::memory_order_relaxed),1)) {
+                ticket.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            for (; old != 0 && i < 64; ++i, old = atom.load(std::memory_order_relaxed))
+                details::__semaphore_yield();
+        }
+        __acquire_slow(order);
+    }
+
+    __semaphore_abi constexpr mutex() noexcept : atom(0), ticket(0), tocket(5) {
+    }
+
+    mutex(const mutex&) = delete;
+    mutex &operator=(const mutex&) = delete;
+
+private:
+    static constexpr uint32_t __valubit = 1;
+    static constexpr uint32_t __contbit = 2;
+
+    __semaphore_abi void __acquire_slow(std::memory_order order) noexcept
+    {
+        details::__semaphore_exponential_backoff b;
+        auto old = atom.fetch_add(__contbit, std::memory_order_acquire);
+        auto const tick = ticket.fetch_add(1, std::memory_order_relaxed);
+        auto tock = tocket.load(std::memory_order_relaxed);
+        auto const maxdiff = (std::numeric_limits<uint32_t>::max)() >> 1;
+        auto ready = (tock >= tick || tick - tock > maxdiff);
+        for (int i = 0; ; ++i) {
+            if(i < 64)
+                details::__semaphore_yield();
+            else 
+                b.sleep();
+            if(!ready) {
+                tock = tocket.load(std::memory_order_relaxed);
+                ready = (tock >= tick || tick - tock > maxdiff);
+                if(ready)
+                    b.reset();
+                else
+                    continue;
+            }
+            old = atom.load(std::memory_order_relaxed);
+            while ((old & __valubit) == 0) {
+                auto next = old - __contbit + __valubit;
+                if (atom.compare_exchange_weak(old, next, order, std::memory_order_relaxed))
+                    return;
+            }
+        }
+    }
+
+    mutable atomic<uint32_t> atom;
+    mutable atomic<uint32_t> ticket;
+    mutable atomic<uint32_t> tocket;
+};
+
+}}}
+
+#endif //__NVCC__
+
 #endif //TEST_HPP
