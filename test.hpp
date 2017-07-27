@@ -230,27 +230,56 @@ struct alignas(64) barrier {
 
 namespace cuda { namespace experimental { inline namespace v1 { 
 
+namespace details {
+    __test_abi inline void __yield()
+    {
+#if !defined(__CUDA_ARCH__)
+        std::this_thread::yield();
+#elif defined(__has_cuda_nanosleep)
+        __mme_nanosleep(1);
+#endif
+    }
+    struct __exponential_backoff
+    {
+        unsigned time = 64;
+        __test_abi void reset() {
+            time = 64;
+        }
+        __test_abi void sleep()
+        {
+#if !defined(__CUDA_ARCH__)
+            std::this_thread::sleep_for(std::chrono::nanoseconds(time));
+#elif defined(__has_cuda_nanosleep)
+            __mme_nanosleep(time);
+#endif
+            time += 64 + (time >> 2);
+            if (time > 128*64) 
+                time = 128*64;
+        }
+    };
+}
+
 struct mutex
 {
-    __semaphore_abi inline void unlock() noexcept {
+    __test_abi inline void unlock() noexcept {
         tocket.fetch_add(1, std::memory_order_relaxed);
         atom.fetch_and(~__valubit, std::memory_order_release);
     }
 
-    __semaphore_abi inline void lock(std::memory_order order = std::memory_order_seq_cst) noexcept {
+    __test_abi inline void lock(std::memory_order order = std::memory_order_seq_cst) noexcept {
         uint32_t old = 0;
         for (int i = 0; i < 64; ++i) {
-            if(__semaphore_expect(atom.compare_exchange_weak(old = 0, __valubit, order, std::memory_order_relaxed),1)) {
+            if(atom.compare_exchange_weak(old = 0, __valubit, order, std::memory_order_relaxed)) {
                 ticket.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
             for (; old != 0 && i < 64; ++i, old = atom.load(std::memory_order_relaxed))
-                details::__semaphore_yield();
+                details::__yield();
         }
-        __acquire_slow(order);
+        __lock_slow(order);
     }
 
-    __semaphore_abi constexpr mutex() noexcept : atom(0), ticket(0), tocket(5) {
+    __test_abi constexpr mutex() noexcept : atom(0), ticket(0), tocket(5) {
     }
 
     mutex(const mutex&) = delete;
@@ -260,9 +289,9 @@ private:
     static constexpr uint32_t __valubit = 1;
     static constexpr uint32_t __contbit = 2;
 
-    __semaphore_abi void __acquire_slow(std::memory_order order) noexcept
+    __test_abi void __lock_slow(std::memory_order order) noexcept
     {
-        details::__semaphore_exponential_backoff b;
+        details::__exponential_backoff b;
         auto old = atom.fetch_add(__contbit, std::memory_order_acquire);
         auto const tick = ticket.fetch_add(1, std::memory_order_relaxed);
         auto tock = tocket.load(std::memory_order_relaxed);
@@ -270,7 +299,7 @@ private:
         auto ready = (tock >= tick || tick - tock > maxdiff);
         for (int i = 0; ; ++i) {
             if(i < 64)
-                details::__semaphore_yield();
+                details::__yield();
             else 
                 b.sleep();
             if(!ready) {
