@@ -45,6 +45,10 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <fstream>
 #include <cmath>
 
+#ifndef __has_include
+  #define __has_include(x) 0
+#endif
+
 #ifndef __test_abi
   #define __test_abi
   #define __managed__
