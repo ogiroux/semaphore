@@ -23,3 +23,4 @@ semaphore/semaphore.VC.db
 *.csv
 
 *.csv
+vc/semaphore.vcxproj.user

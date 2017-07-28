@@ -184,26 +184,31 @@ __semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order) noexcep
     uint32_t const tick = ticket.fetch_add(1, std::memory_order_relaxed);
     uint32_t tock = tocket.load(std::memory_order_relaxed);
     uint32_t contbit = 0u;
-    for (int i = 0;; ++i) {
-        if(i < 64)
-            details::__semaphore_yield();
+#ifdef __semaphore_fast_path
+    uint32_t sum = 0u;
+    while(1) {
+        if(sum < 64*1024) {
+#else
+    while(1) {
+#endif
+            uint32_t const delta = (tick - tock) * 128;
+#if !defined(__CUDA_ARCH__)
+            std::this_thread::sleep_for(std::chrono::nanoseconds(delta));
+#elif defined(__has_cuda_nanosleep)
+            details::__mme_nanosleep(delta);
+#endif
+#ifdef __semaphore_fast_path
+            sum += delta;
+        }
         else 
         {
-#ifdef __semaphore_fast_path
             uint32_t old = atom.fetch_or(__slowbit, std::memory_order_relaxed) | __slowbit;
             if ((old & __valubit) != 0) {
                 atomic_thread_fence(std::memory_order_seq_cst);
                 details::__semaphore_wait(atom, old);
             }
-#else
-            uint32_t const delta = tick - tock;
-#if !defined(__CUDA_ARCH__)
-            std::this_thread::sleep_for(std::chrono::nanoseconds(delta * 256 + 256));
-#elif defined(__has_cuda_nanosleep)
-            details::__mme_nanosleep(delta * 256 + 256);
-#endif
-#endif
         }
+#endif
         tock = tocket.load(std::memory_order_relaxed);
         if(tock != tick)
             continue;
