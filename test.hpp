@@ -29,7 +29,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef TEST_HPP
 #define TEST_HPP
 
-struct alignas(64) test_mutex_ {
+struct test_mutex_ {
 
     __test_abi void lock() {
 
@@ -78,7 +78,7 @@ __test_abi void test_atomic_wait_explicit(atomic<T> const* a, V old, std::memory
     }
 }
 
-struct alignas(64) test_mutex {
+struct test_mutex {
     __test_abi void lock() {
         for (int i = 0; i < 16; ++i) {
             bool state = false;
@@ -99,7 +99,7 @@ struct alignas(64) test_mutex {
 };
 
 
-struct alignas(64) dumb_mutex {
+struct dumb_mutex {
 
     __test_abi void lock() {
 
@@ -121,7 +121,7 @@ private:
     atomic<bool> locked{ false };
 };
 
-struct alignas(64) binary_semaphore_lock {
+struct binary_semaphore_lock {
     __test_abi void lock() {
         f.acquire(std::memory_order_acquire);
     }
@@ -132,7 +132,7 @@ private:
     binary_semaphore f{ true };
 };
 
-struct alignas(64) counting_semaphore_lock {
+struct counting_semaphore_lock {
     __test_abi void lock() {
         f.acquire(std::memory_order_acquire);
     }
@@ -161,7 +161,7 @@ private:
     int const                                         c;
 };
 
-struct alignas(64) atomic_wait_lock {
+struct atomic_wait_lock {
 
     __test_abi void lock() {
 
@@ -180,11 +180,11 @@ struct alignas(64) atomic_wait_lock {
     }
 
 private:
-    alignas(64) atomic<bool> f{ 0 };
+    atomic<bool> f{ 0 };
 };
 
 // 2 cache lines
-struct alignas(64) barrier {
+struct barrier {
 
     __test_abi barrier() = delete;
     __test_abi constexpr barrier(int c) : __o{ c } { }
@@ -259,7 +259,7 @@ namespace details {
     };
 }
 
-struct alignas(64) mutex
+struct mutex
 {
     __test_abi inline void unlock() noexcept {
         if (__stolen.load(std::memory_order_relaxed))

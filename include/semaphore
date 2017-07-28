@@ -523,7 +523,7 @@ struct counting_semaphore
 #define __semaphore_abi_a __semaphore_abi static
 #endif
 
-struct alignas(64) synchronic {
+struct synchronic {
 
     template <class T>
     __semaphore_abi_a void signal(const atomic<T>* a, semaphore_notify notify = semaphore_notify_all) noexcept

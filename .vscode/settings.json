@@ -1,7 +1,7 @@
 {
     "files.associations": {
-        "*.cu": "cpp",
         "atomic": "cpp",
+        "*.cu": "cpp",
         "__bit_reference": "cpp",
         "algorithm": "cpp",
         "bitset": "cpp",
@@ -45,6 +45,7 @@
         "thread": "cpp",
         "tuple": "cpp",
         "type_traits": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "__mutex_base": "cpp"
     }
 }

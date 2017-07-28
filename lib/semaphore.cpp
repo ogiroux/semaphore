@@ -312,7 +312,7 @@ static constexpr int __atomic_wait_table_entry_size = sizeof(synchronic) > align
 
 static constexpr int __atomic_wait_table_entry_count = 1024;
 
-__semaphore_managed alignas(__atomic_wait_table_entry_size) unsigned char __atomic_wait_table[__atomic_wait_table_entry_count][__atomic_wait_table_entry_size] = { 0 };
+__semaphore_managed alignas(64) unsigned char __atomic_wait_table[__atomic_wait_table_entry_count][__atomic_wait_table_entry_size] = { 0 };
 
 __semaphore_abi size_t __atomic_wait_table_index(void const* ptr) {
 

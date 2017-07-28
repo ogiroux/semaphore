@@ -667,6 +667,7 @@ void run_and_report_scenarios(char const* lockname, uint32_t& count, double& pro
     product *= product_;
 }
 
+#define run_and_report_mutex_scenarios(x,c,s) run_and_report_scenarios<wrapped_mutex<x>>(#x,c,s)
 #define run_and_report_scenarios(x,c,s) run_and_report_scenarios<x>(#x,c,s)
 
 struct null_mutex {
@@ -689,11 +690,6 @@ void run_calibration() {
         ;
     }
   });
-
-#ifdef __NVCC__
-//  run_scenario_singlethreaded<null_mutex>("-calibration-", count, product, 0, 1);
-#endif
-//  run_scenario_singlethreaded<null_mutex>("-calibration-", count, product, 1, 0);
 }
 
 #ifdef __test_wtf
@@ -716,6 +712,23 @@ void run_calibration() {
     #include <wtf/text/CString.h>
 
 #endif
+
+template<class M>
+struct alignas(64) wrapped_mutex {
+
+    wrapped_mutex() : __m() { }
+    wrapped_mutex(wrapped_mutex const&) = delete;
+    wrapped_mutex& operator=(wrapped_mutex const&) = delete;
+
+    __test_abi void lock() noexcept {
+        __m.lock();
+    }
+    __test_abi void unlock() noexcept {
+        __m.unlock();
+    }
+
+    M __m;
+};
 
 int main(int argc, char const* argv[]) {
 
@@ -783,19 +796,18 @@ int main(int argc, char const* argv[]) {
 
   run_calibration();
 
-  run_and_report_scenarios(mutex, count, product);
 #ifdef __test_wtf
-  run_and_report_scenarios(WTF::Lock, count, product);
+  run_and_report_mutex_scenarios(WTF::Lock, count, product);
 #endif
-  run_and_report_scenarios(binary_semaphore_lock, count, product);
-  run_and_report_scenarios(counting_semaphore_lock, count, product);
+  run_and_report_mutex_scenarios(binary_semaphore_lock, count, product);
 #ifdef HAS_UNFAIR_LOCK
-  run_and_report_scenarios(unfair_lock, count, product);
+  run_and_report_mutex_scenarios(unfair_lock, count, product);
 #endif
   if(!onlylock.empty()) {
-    run_and_report_scenarios(null_mutex, count, product);
-    run_and_report_scenarios(atomic_wait_lock, count, product);
-    run_and_report_scenarios(dumb_mutex, count, product);
+    run_and_report_mutex_scenarios(counting_semaphore_lock, count, product);
+    run_and_report_mutex_scenarios(null_mutex, count, product);
+    run_and_report_mutex_scenarios(atomic_wait_lock, count, product);
+    run_and_report_mutex_scenarios(dumb_mutex, count, product);
     run_and_report_scenarios(barrier, count, product);
   }
   std::cout << "== total : " << std::fixed << std::setprecision(0) << 10000/std::pow(product, 1.0/count) << " lockmarks ==" << std::endl;
