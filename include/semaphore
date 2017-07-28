@@ -141,7 +141,7 @@ struct binary_semaphore
 #ifdef __semaphore_cuda
         , tocket(5)
 #else
-        , tocket(3)
+        , tocket(5)
 #endif
     {
     }

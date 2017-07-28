@@ -244,7 +244,7 @@ struct __semaphore_exponential_backoff
             __mme_nanosleep(time);
 #endif
         }
-        time += 64 + (time >> 2);
+        time += min_time + (time >> 2);
         if (time > max_time) 
             time = max_time;
     }

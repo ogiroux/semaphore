@@ -259,6 +259,76 @@ namespace details {
     };
 }
 
+struct alignas(64) mutex
+{
+    __test_abi inline void unlock() noexcept {
+        if (__stolen.load(std::memory_order_relaxed))
+            __stolen.store(false, std::memory_order_relaxed);
+        else
+            __tocket.store(__tocket.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+        __atom.fetch_and(~__valubit, std::memory_order_release);
+    }
+
+    __test_abi inline void lock() noexcept {
+        uint32_t old = 0;
+        if (__builtin_expect(__atom.compare_exchange_weak(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed), 1)) {
+            __stolen.store(true, std::memory_order_relaxed);
+            return;
+        }
+        uint32_t const tick = __ticket.fetch_add(1, std::memory_order_relaxed);
+        for (int i = 0; old == 0 && i < 32; ++i) {
+            if (__atom.compare_exchange_weak(old, __valubit, std::memory_order_acquire, std::memory_order_relaxed))
+                return;
+            for (; old != 0 && i < 32; ++i, details::__yield())
+                old = __atom.load(std::memory_order_relaxed);
+        }
+        __lock_slow(tick);
+    }
+
+    static constexpr uint32_t __valubit = 1;
+    static constexpr uint32_t __contbit = 2;
+
+    __test_abi constexpr mutex() noexcept : __atom(0), __ticket(0), __tocket(0), __stolen(false) {
+    }
+
+    mutex(const mutex&) = delete;
+    mutex &operator=(const mutex&) = delete;
+
+    __test_abi void __lock_slow(uint32_t const tick) noexcept
+    {
+        uint32_t contbit = 0;
+        for (int i = 0;; ++i) {
+            uint32_t old = __atom.load(std::memory_order_relaxed);
+            uint32_t const tock = __tocket.load(std::memory_order_relaxed);
+            uint32_t const pos_balance = tock > tick ? tock - tick : 0;
+            if (tock == tick || pos_balance) {
+                if (!contbit)
+                    if (pos_balance > 16 || __stolen.load(std::memory_order_relaxed))
+                        old = __atom.fetch_add(contbit = __contbit, std::memory_order_relaxed) + __contbit;
+                while (!(old & __valubit)) {
+                    if ((old & ~__valubit) && !contbit)
+                        break;
+                    uint32_t const next = old - contbit + __valubit;
+                    if (__atom.compare_exchange_weak(old, next, std::memory_order_acquire, std::memory_order_relaxed))
+                        return;
+                }
+            }
+            uint32_t const neg_balance = tock < tick ? tick - tock : 0;
+#if !defined(__CUDA_ARCH__)
+            std::this_thread::sleep_for(std::chrono::nanoseconds(neg_balance * 256 + 256));
+#elif defined(__has_cuda_nanosleep)
+            details::__mme_nanosleep(neg_balance * 256 + 256);
+#endif
+        }
+    }
+
+    atomic<uint32_t> __atom;
+    atomic<uint32_t> __ticket;
+    atomic<uint32_t> __tocket;
+    atomic<bool>     __stolen;
+};
+
+/*
 struct mutex
 {
     __test_abi inline void unlock() noexcept {
@@ -318,6 +388,8 @@ struct mutex
     atomic<uint32_t> __ticket;
     atomic<uint32_t> __tocket;
 };
+
+*/
 
 }}}
 
