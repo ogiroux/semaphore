@@ -114,13 +114,13 @@ struct binary_semaphore
     __semaphore_abi inline bool try_acquire(std::memory_order = std::memory_order_seq_cst) noexcept
     {
         count_type old = 0;
-        for (int i = 0;i < 32; ++i) {
-            if(__semaphore_expect(atom.compare_exchange_weak(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed),1))
+        for (int i = 0;i < 64; ++i) {
+            if(__semaphore_expect(atom.compare_exchange_strong(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed),1))
                 return stolen = true;
-            do {
+            for(; old != 0 && i < 64; ++i) {
                 details::__semaphore_yield();
                 old = atom.load(std::memory_order_relaxed);
-            } while(old != 0);
+            }
         }
         return false;
     }

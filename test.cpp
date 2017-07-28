@@ -796,6 +796,7 @@ int main(int argc, char const* argv[]) {
 
   run_calibration();
 
+  run_and_report_mutex_scenarios(mutex, count, product);
 #ifdef __test_wtf
   run_and_report_mutex_scenarios(WTF::Lock, count, product);
 #endif
