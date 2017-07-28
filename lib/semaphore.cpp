@@ -162,6 +162,7 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old, std::memor
     } while (!atom.compare_exchange_weak(old, (old | lock) & ~(__valubit | __slowbit), order, std::memory_order_relaxed));
     if (lock != 0)
     {
+        atomic_thread_fence(std::memory_order_seq_cst);
         switch (notify)
         {
         case semaphore_notify_all:
@@ -178,90 +179,44 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old, std::memor
 }
 #endif
 
-__semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order order) noexcept
+__semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order) noexcept
 {
-    auto const maxdiff = (std::numeric_limits<count_type>::max)() >> 1;
-
-    details::__semaphore_exponential_backoff b;
-    auto old = atom.fetch_add(__contbit, std::memory_order_acquire);
-    auto const tick = ticket.fetch_add(1, std::memory_order_relaxed);
-    auto tock = tocket.load(std::memory_order_relaxed);
-    auto ready = (tock >= tick || tick - tock > maxdiff);
-    for (int i = 0; ; ++i) {
+    uint32_t const tick = ticket.fetch_add(1, std::memory_order_relaxed);
+    uint32_t tock = tocket.load(std::memory_order_relaxed);
+    uint32_t contbit = 0u;
+    for (int i = 0;; ++i) {
         if(i < 64)
             details::__semaphore_yield();
         else 
         {
 #ifdef __semaphore_fast_path
-            old = atom.fetch_or(__slowbit, std::memory_order_acquire) | __slowbit;
-            if (!ready || (old & __valubit) != 0)
+            uint32_t old = atom.fetch_or(__slowbit, std::memory_order_relaxed) | __slowbit;
+            if ((old & __valubit) != 0) {
+                atomic_thread_fence(std::memory_order_seq_cst);
                 details::__semaphore_wait(atom, old);
+            }
 #else
-            b.sleep();
+            uint32_t const delta = tick - tock;
+#if !defined(__CUDA_ARCH__)
+            std::this_thread::sleep_for(std::chrono::nanoseconds(delta * 256 + 256));
+#elif defined(__has_cuda_nanosleep)
+            details::__mme_nanosleep(delta * 256 + 256);
+#endif
 #endif
         }
-        if(!ready) {
-            tock = tocket.load(std::memory_order_relaxed);
-            ready = (tock >= tick || tick - tock > maxdiff);
-            if(ready)
-                b.reset();
-            else
-                continue;
-        }
-        old = atom.load(std::memory_order_relaxed);
+        tock = tocket.load(std::memory_order_relaxed);
+        if(tock != tick)
+            continue;
+        uint32_t old = atom.load(std::memory_order_relaxed);
         while ((old & __valubit) == 0) {
             old &= ~__lockbit;
-            auto next = old - __contbit + __valubit;
-            if (atom.compare_exchange_weak(old, next, order, std::memory_order_relaxed))
+            uint32_t next = old - contbit + __valubit;
+            if (atom.compare_exchange_weak(old, next, std::memory_order_acquire, std::memory_order_relaxed))
                 return;
         }
+        if(contbit == 0)
+            atom.fetch_add(contbit = __contbit, std::memory_order_relaxed);
     }
-}
-
-bool binary_semaphore::__acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &abs_time, std::memory_order order) noexcept
-{
-
-    count_type old = atom.load(order);
-    count_type const expectbit = 0; //(set ? __valubit : 0);
-    if ((old & __valubit) != expectbit)
-    {
-        details::__semaphore_exponential_backoff b;
-#ifdef __semaphore_fast_path
-        for (int i = 0; i < 2; ++i)
-        {
-#else
-        while (1)
-        {
-#endif
-            if (details::__semaphore_clock::now() > abs_time)
-                return false;
-            b.sleep();
-            old = atom.load(order);
-            if ((old & __valubit) == expectbit)
-                break;
-        }
-    }
-#ifdef __semaphore_fast_path
-    if ((old & __valubit) != expectbit)
-    {
-        while (1)
-        {
-            old = atom.fetch_or(__contbit, std::memory_order_relaxed) | __contbit;
-            if ((old & __valubit) == expectbit)
-                break;
-            auto const delay = abs_time - details::__semaphore_clock::now();
-            if (delay < details::__semaphore_duration(0))
-                return false;
-            details::__semaphore_wait_timed(atom, old, delay);
-            old = atom.load(order);
-            if ((old & __valubit) == expectbit)
-                break;
-        }
-    }
-    while (old & __lockbit)
-        old = atom.load(std::memory_order_relaxed);
-#endif
-    return true;
 }
 
 #ifndef __semaphore_sem
