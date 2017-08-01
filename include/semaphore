@@ -98,11 +98,6 @@ struct binary_semaphore
 #else
         atom.fetch_and(~__valubit, order);
 #endif
-#ifdef __semaphore_arm
-        __asm__ __volatile__(
-            "   dsb\n"
-            "   sev");
-#endif
     }
 
     __semaphore_abi inline void acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
@@ -211,12 +206,6 @@ public:
 #else
         count_type old = atom.fetch_add(term, order);
 #endif
-
-#ifdef __semaphore_arm
-        __asm__ __volatile__(
-            "   dsb\n"
-            "   sev");
-#endif
     }
 
     __semaphore_abi inline void acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
@@ -280,14 +269,6 @@ private:
         }
         if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0))
             retcode = __fetch_sub_if_slow(old, order);
-#ifdef __semaphore_arm
-        if (!retcode)
-        {
-            __asm__ __volatile__(
-                "   dsb\n"
-                "   sev");
-        }
-#endif
         return retcode;
     }
 
@@ -305,27 +286,6 @@ private:
         auto value = (atom.load(order) >> __shift);
         if (__semaphore_expect(value >= 1, 1))
             return true;
-#ifdef __semaphore_arm
-        for (int i = 0; i < 4; ++i)
-        {
-            auto const tmp = old;
-            __asm__ __volatile__(
-                "ldrex %0, [%1]\n"
-                "cmp %0, %2\n"
-                "it eq\n"
-                "wfeeq.n\n"
-                "nop.w\n"
-                : "=&r"(old)
-                : "r"(&atom), "r"(tmp)
-                : "cc");
-            value = (atom.load(order) >> __shift);
-            if (__semaphore_expect(value >= 1, 1))
-            {
-                atomic_thread_fence(order);
-                return true;
-            }
-        }
-#endif
         for (int i = 0; i < 32; ++i)
         {
             details::__semaphore_yield();
@@ -451,23 +411,6 @@ struct counting_semaphore
 
         if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
             return;
-#ifdef __semaphore_arm
-        for (int i = 0; i < 4; ++i)
-        {
-            __base_t const tmp = old;
-            __asm__ __volatile__(
-                "ldrex %0, [%1]\n"
-                "cmp %0, %2\n"
-                "it eq\n"
-                "wfeeq.n\n"
-                "nop.w\n"
-                : "=&r"(old)
-                : "r"(&atom), "r"(tmp)
-                : "cc");
-            if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
-                return;
-        }
-#endif
         for (int i = 0; i < 32; ++i)
         {
             details::__semaphore_yield();
