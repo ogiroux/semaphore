@@ -149,37 +149,10 @@ inline void __semaphore_wake_all(A &a)
 }
 #endif // defined(WIN32) && _WIN32_WINNT >= 0x0602
 
-#endif // __semaphore_cuda
-}
-
-#ifdef __semaphore_fast_path
-__semaphore_abi void binary_semaphore::__release_slow(count_type old, std::memory_order order, semaphore_notify notify) noexcept
-{
-    count_type lock = 0;
-    do {
-        old &= ~__lockbit;
-        lock = (old & __slowbit) ? __lockbit : 0;
-    } while (!atom.compare_exchange_weak(old, (old | lock) & ~(__valubit | __slowbit), order, std::memory_order_relaxed));
-    if (lock != 0)
-    {
-        atomic_thread_fence(std::memory_order_seq_cst);
-        switch (notify)
-        {
-        case semaphore_notify_all:
-            details::__semaphore_wake_all(atom);
-            break;
-        case semaphore_notify_one:
-            details::__semaphore_wake_one(atom);
-            break;
-        case semaphore_notify_none:
-            break;
-        }
-        atom.fetch_and(~__lockbit, std::memory_order_release);
-    }
-}
-#endif
-
-__semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order) noexcept
+template<class Fn>
+__semaphore_abi bool __binary_semaphore_acquire_slow(
+    atomic<binary_semaphore::count_type>& atom, atomic<binary_semaphore::count_type>& ticket,
+    atomic<binary_semaphore::count_type>& tocket, bool const& stolen, Fn fn) noexcept
 {
     uint32_t const tick = ticket.fetch_add(1, std::memory_order_relaxed);
     uint32_t tock = tocket.load(std::memory_order_relaxed);
@@ -202,26 +175,75 @@ __semaphore_abi void binary_semaphore::__acquire_slow(std::memory_order) noexcep
         }
         else 
         {
-            uint32_t old = atom.fetch_or(__slowbit, std::memory_order_relaxed) | __slowbit;
-            if ((old & __valubit) != 0) {
+            uint32_t old = atom.fetch_or(binary_semaphore::__slowbit, std::memory_order_relaxed) | binary_semaphore::__slowbit;
+            if ((old & binary_semaphore::__valubit) != 0) {
                 atomic_thread_fence(std::memory_order_seq_cst);
-                details::__semaphore_wait(atom, old);
+                if(!fn(old))
+                    return false;
             }
         }
+        uint32_t old = atom.load(std::memory_order_relaxed);
+#else
+        uint32_t old = atom.load(std::memory_order_relaxed);
+        if(!fn(old))
+            return false;
 #endif
         tock = tocket.load(std::memory_order_relaxed);
         if(tock != tick)
             continue;
-        uint32_t old = atom.load(std::memory_order_relaxed);
-        while ((old & __valubit) == 0) {
-            old &= ~__lockbit;
-            uint32_t next = old - contbit + __valubit;
+        while ((old & binary_semaphore::__valubit) == 0) {
+            old &= ~binary_semaphore::__lockbit;
+            uint32_t next = old - contbit + binary_semaphore::__valubit;
             if (atom.compare_exchange_weak(old, next, std::memory_order_acquire, std::memory_order_relaxed))
-                return;
+                return true;
         }
         if(contbit == 0)
-            atom.fetch_add(contbit = __contbit, std::memory_order_relaxed);
+            atom.fetch_add(contbit = binary_semaphore::__contbit, std::memory_order_relaxed);
     }
+}
+
+#endif // __semaphore_cuda
+}
+
+#ifdef __semaphore_fast_path
+__semaphore_abi void binary_semaphore::__release_slow(count_type old) noexcept
+{
+    count_type lock = 0;
+    do {
+        old &= ~__lockbit;
+        lock = (old & __slowbit) ? __lockbit : 0;
+    } while (!__atom.compare_exchange_weak(old, (old | lock) & ~(__valubit | __slowbit), std::memory_order_release, std::memory_order_relaxed));
+    if (lock != 0)
+    {
+        atomic_thread_fence(std::memory_order_seq_cst);
+        details::__semaphore_wake_all(__atom);
+        __atom.fetch_and(~__lockbit, std::memory_order_release);
+    }
+}
+#endif
+
+__semaphore_abi void binary_semaphore::__acquire_slow() noexcept
+{
+    auto const fn = [=](uint32_t old) -> bool __semaphore_abi { 
+#ifdef __semaphore_fast_path
+        details::__semaphore_wait(__atom, old); 
+#endif
+        return true;
+    };
+    details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
+}
+
+__semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const& abs_time) noexcept 
+{
+    auto const fn = [=](uint32_t old) -> bool __semaphore_abi { 
+#ifdef __semaphore_fast_path
+        auto time = abs_time - details::__semaphore_clock::now();
+        if(rel_time > 0)
+            details::__semaphore_wait_timed(__atom, old, rel_time); 
+#endif
+        return details::__semaphore_clock::now() < abs_time;
+    };
+    return details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
 
 #ifndef __semaphore_sem

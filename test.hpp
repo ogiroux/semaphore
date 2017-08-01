@@ -123,10 +123,10 @@ private:
 
 struct binary_semaphore_lock {
     __test_abi void lock() {
-        f.acquire(std::memory_order_acquire);
+        f.acquire();
     }
     __test_abi void unlock() {
-        f.release(std::memory_order_release);
+        f.release();
     }
 private:
     binary_semaphore f{ true };
