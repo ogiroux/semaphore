@@ -237,8 +237,8 @@ __semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_po
 {
     auto const fn = [=](uint32_t old) -> bool __semaphore_abi { 
 #ifdef __semaphore_fast_path
-        auto time = abs_time - details::__semaphore_clock::now();
-        if(rel_time > 0)
+        auto rel_time = abs_time - details::__semaphore_clock::now();
+        if(rel_time > std::chrono::microseconds(0))
             details::__semaphore_wait_timed(__atom, old, rel_time); 
 #endif
         return details::__semaphore_clock::now() < abs_time;
