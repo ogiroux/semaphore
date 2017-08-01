@@ -49,7 +49,7 @@ namespace details = cuda::experimental::details;
 
 #include "test.hpp"
 
-using mutex = cuda::experimental::mutex;
+using mutex = demo_mutex;
 
 template<class F>
 __global__ void run_gpu_thread(uint32_t count, uint32_t count_per_block, F const* f) {

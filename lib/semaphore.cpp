@@ -149,6 +149,8 @@ inline void __semaphore_wake_all(A &a)
 }
 #endif // defined(WIN32) && _WIN32_WINNT >= 0x0602
 
+#endif // __semaphore_cuda
+
 template<class Fn>
 __semaphore_abi bool __binary_semaphore_acquire_slow(
     atomic<binary_semaphore::count_type>& atom, atomic<binary_semaphore::count_type>& ticket,
@@ -202,7 +204,6 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
     }
 }
 
-#endif // __semaphore_cuda
 }
 
 #ifdef __semaphore_fast_path
@@ -224,7 +225,7 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old) noexcept
 
 __semaphore_abi void binary_semaphore::__acquire_slow() noexcept
 {
-    auto const fn = [=](uint32_t old) -> bool __semaphore_abi { 
+    auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
 #ifdef __semaphore_fast_path
         details::__semaphore_wait(__atom, old); 
 #endif
@@ -233,9 +234,11 @@ __semaphore_abi void binary_semaphore::__acquire_slow() noexcept
     details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
 
+#ifndef __semaphore_cuda
+
 __semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const& abs_time) noexcept 
 {
-    auto const fn = [=](uint32_t old) -> bool __semaphore_abi { 
+    auto const fn = [=](uint32_t old) __semaphore_abi -> bool { 
 #ifdef __semaphore_fast_path
         auto rel_time = abs_time - details::__semaphore_clock::now();
         if(rel_time > std::chrono::microseconds(0))
@@ -245,6 +248,8 @@ __semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_po
     };
     return details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
+
+#endif
 
 #ifndef __semaphore_sem
 
