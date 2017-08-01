@@ -805,6 +805,7 @@ int main(int argc, char const* argv[]) {
   run_and_report_mutex_scenarios(unfair_lock, count, product);
 #endif
   if(!onlylock.empty()) {
+    run_and_report_mutex_scenarios(demo_mutex, count, product);
     run_and_report_mutex_scenarios(counting_semaphore_lock, count, product);
     run_and_report_mutex_scenarios(null_mutex, count, product);
     run_and_report_mutex_scenarios(atomic_wait_lock, count, product);

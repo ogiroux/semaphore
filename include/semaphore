@@ -77,93 +77,82 @@ struct binary_semaphore
 
     static constexpr count_type max = 1;
 
-    __semaphore_abi inline void release(std::memory_order order = std::memory_order_seq_cst) noexcept
+    __semaphore_abi inline void release() noexcept
     {
-        release(semaphore_notify_all, order);
-    }
-    __semaphore_abi inline void release(semaphore_notify notify, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        if(stolen)
-            stolen = false;
+        if(__stolen)
+            __stolen = false;
         else
 #ifdef __semaphore_cuda
-            tocket.fetch_add(1, std::memory_order_relaxed);
+            __tocket.fetch_add(1, std::memory_order_relaxed);
 #else
-            tocket.store(tocket.load(std::memory_order_relaxed)+1, std::memory_order_relaxed);
+            __tocket.store(__tocket.load(std::memory_order_relaxed)+1, std::memory_order_relaxed);
 #endif
 #ifdef __semaphore_fast_path
         count_type old = __valubit;
-        if (__semaphore_expect(!atom.compare_exchange_strong(old, 0, order, std::memory_order_relaxed), 0))
-            __release_slow(old, order, notify);
+        if (__semaphore_expect(!__atom.compare_exchange_strong(old, 0, std::memory_order_acquire, std::memory_order_relaxed), 0))
+            __release_slow(old);
 #else
-        atom.fetch_and(~__valubit, order);
-#endif
-#ifdef __semaphore_arm
-        __asm__ __volatile__(
-            "   dsb\n"
-            "   sev");
+        __atom.fetch_and(~__valubit, std::memory_order_acquire);
 #endif
     }
-
-    __semaphore_abi inline void acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        if (__semaphore_expect(try_acquire(order), 1))
-            return;
-        __acquire_slow(order);
-    }
-    __semaphore_abi inline bool try_acquire(std::memory_order = std::memory_order_seq_cst) noexcept
+    __semaphore_abi inline bool try_acquire() noexcept
     {
         count_type old = 0;
         for (int i = 0;i < 64; ++i) {
-            if(__semaphore_expect(atom.compare_exchange_strong(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed),1))
-                return stolen = true;
+            if(__semaphore_expect(__atom.compare_exchange_strong(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed),1))
+                return __stolen = true;
             for(; old != 0 && i < 64; ++i) {
                 details::__semaphore_yield();
-                old = atom.load(std::memory_order_relaxed);
+                old = __atom.load(std::memory_order_relaxed);
             }
         }
         return false;
     }
-    template <class Clock, class Duration>
-    __semaphore_abi bool try_acquire_until(const std::chrono::time_point<Clock, Duration>& abs_time, std::memory_order order = std::memory_order_seq_cst)
+    __semaphore_abi inline void acquire() noexcept
     {
-        if (__semaphore_expect(try_acquire(order), 1))
+        if (__semaphore_expect(try_acquire(), 1))
+            return;
+        __acquire_slow();
+    }
+    template <class Clock, class Duration>
+    __semaphore_abi bool try_acquire_until(const std::chrono::time_point<Clock, Duration>& abs_time)
+    {
+        if (__semaphore_expect(try_acquire(), 1))
             return true;
-        return __acquire_slow_timed(abs_time, order);
+        return __acquire_slow_timed(abs_time);
     }
     template <class Rep, class Period>
-    __semaphore_abi bool try_acquire_for(const std::chrono::duration<Rep, Period>& rel_time, std::memory_order order = std::memory_order_seq_cst)
+    __semaphore_abi bool try_acquire_for(const std::chrono::duration<Rep, Period>& rel_time)
     {
-        if (__semaphore_expect(try_acquire(order), 1))
+        if (__semaphore_expect(try_acquire(), 1))
             return true;
-        return __acquire_slow_timed(details::__semaphore_clock::now() + rel_time, order);
+        return __acquire_slow_timed(details::__semaphore_clock::now() + rel_time);
     }
 
-    __semaphore_abi constexpr binary_semaphore(count_type desired) noexcept : atom(desired ? 0 : 1), ticket(0), tocket(0), stolen(false)
+    __semaphore_abi constexpr binary_semaphore(count_type desired) noexcept : __atom(desired ? 0 : 1), __ticket(0), __tocket(0), __stolen(false)
     {
     }
 
     binary_semaphore(const binary_semaphore&) = delete;
     binary_semaphore &operator=(const binary_semaphore&) = delete;
 
-private:
     static constexpr count_type __valubit = 1;
     static constexpr count_type __lockbit = 2;
     static constexpr count_type __slowbit = 4;
     static constexpr count_type __contbit = 8;
 
 #ifdef __semaphore_fast_path
-    __semaphore_abi void __release_slow(count_type old, std::memory_order order, semaphore_notify notify) noexcept;
+    __semaphore_abi void __release_slow(count_type old) noexcept;
 #endif
 
-    __semaphore_abi void __acquire_slow(std::memory_order) noexcept;
+    __semaphore_abi void __acquire_slow() noexcept;
 
-    bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &, std::memory_order) noexcept;
+    bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &) noexcept;
 
-    atomic<count_type> atom;
-    atomic<count_type> ticket;
-    atomic<count_type> tocket;
-    bool stolen;
+    atomic<count_type> __atom;
+    atomic<count_type> __ticket;
+    atomic<count_type> __tocket;
+    bool __stolen;
 };
 
 #ifndef __semaphore_sem
@@ -210,12 +199,6 @@ public:
             __fetch_add_slow(term, old, order, notify);
 #else
         count_type old = atom.fetch_add(term, order);
-#endif
-
-#ifdef __semaphore_arm
-        __asm__ __volatile__(
-            "   dsb\n"
-            "   sev");
 #endif
     }
 
@@ -280,14 +263,6 @@ private:
         }
         if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0))
             retcode = __fetch_sub_if_slow(old, order);
-#ifdef __semaphore_arm
-        if (!retcode)
-        {
-            __asm__ __volatile__(
-                "   dsb\n"
-                "   sev");
-        }
-#endif
         return retcode;
     }
 
@@ -305,27 +280,6 @@ private:
         auto value = (atom.load(order) >> __shift);
         if (__semaphore_expect(value >= 1, 1))
             return true;
-#ifdef __semaphore_arm
-        for (int i = 0; i < 4; ++i)
-        {
-            auto const tmp = old;
-            __asm__ __volatile__(
-                "ldrex %0, [%1]\n"
-                "cmp %0, %2\n"
-                "it eq\n"
-                "wfeeq.n\n"
-                "nop.w\n"
-                : "=&r"(old)
-                : "r"(&atom), "r"(tmp)
-                : "cc");
-            value = (atom.load(order) >> __shift);
-            if (__semaphore_expect(value >= 1, 1))
-            {
-                atomic_thread_fence(order);
-                return true;
-            }
-        }
-#endif
         for (int i = 0; i < 32; ++i)
         {
             details::__semaphore_yield();
@@ -451,23 +405,6 @@ struct counting_semaphore
 
         if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
             return;
-#ifdef __semaphore_arm
-        for (int i = 0; i < 4; ++i)
-        {
-            __base_t const tmp = old;
-            __asm__ __volatile__(
-                "ldrex %0, [%1]\n"
-                "cmp %0, %2\n"
-                "it eq\n"
-                "wfeeq.n\n"
-                "nop.w\n"
-                : "=&r"(old)
-                : "r"(&atom), "r"(tmp)
-                : "cc");
-            if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
-                return;
-        }
-#endif
         for (int i = 0; i < 32; ++i)
         {
             details::__semaphore_yield();
