@@ -751,7 +751,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
             __device__ static T __fetch_add_8_16(Q& value, T addend, std::memory_order order) noexcept {
                 addend *= __scale_addend<Q>();
                 T ret = __mme_std<T>::load(value, std::memory_order_relaxed);
-                while (!__mme_std<T>::compare_exchange_strong(value, ret, ret + addend, order, order))
+                while (!__compare_exchange_strong_8_16(value, ret, ret + addend, order, order))
                     ;
                 return ret;
             }
@@ -767,7 +767,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
             template<class Q>
             __device__ static T __fetch_and_8_16(Q& value, T andend, std::memory_order order) noexcept {
                 T ret = __mme_std<T>::load(value, std::memory_order_relaxed);
-                while (!__mme_std<T>::compare_exchange_strong(value, ret, ret & andend, order, order))
+                while (!__compare_exchange_strong_8_16(value, ret, ret & andend, order, order))
                     ;
                 return ret;
             }
