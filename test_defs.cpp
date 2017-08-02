@@ -574,7 +574,7 @@ void run_scenario_phaser(char const* lockname, char const* scenarioname, uint32_
 
     auto g = [=] __test_abi(uint32_t index, bool is_cpu) -> bool {
         auto ret = wi->do_it(index, is_cpu) > 1;
-        for(int i = 0;ret && i < wicount; ++i) {
+        for(uint32_t i = 0;ret && i < wicount; ++i) {
             t->arrive_and_wait();
             ret = wi->do_it(index, is_cpu) > 1;
         }
