@@ -60,20 +60,17 @@ int main(int argc, char const* argv[]) {
   double product = 1.0;
 
   run_and_report_mutex_scenarios(mutex, count, product);
-#ifdef __test_wtf
-  run_and_report_mutex_scenarios(WTF::Lock, count, product);
-#endif
-  run_and_report_mutex_scenarios(binary_semaphore_lock, count, product);
+  run_and_report_mutex_scenarios(binary_semaphore_mutex, count, product);
   if(!onlylock.empty()) {
+#ifdef __test_wtf
+    run_and_report_mutex_scenarios(WTF::Lock, count, product);
+#endif
 #ifdef HAS_UNFAIR_LOCK
     run_and_report_mutex_scenarios(unfair_lock, count, product);
 #endif
-    run_and_report_mutex_scenarios(demo_mutex, count, product);
-    run_and_report_mutex_scenarios(counting_semaphore_lock, count, product);
-    run_and_report_mutex_scenarios(null_mutex, count, product);
-    run_and_report_mutex_scenarios(atomic_wait_lock, count, product);
-    run_and_report_mutex_scenarios(dumb_mutex, count, product);
-    run_and_report_barrier_scenarios(barrier, count, product);
+    run_and_report_mutex_scenarios(counting_semaphore_mutex, count, product);
+    run_and_report_mutex_scenarios(poor_mutex, count, product);
+    run_and_report_mutex_scenarios(mutex, count, product);
   }
   std::cout << "== total : " << std::fixed << std::setprecision(0) << 10000/std::pow(product, 1.0/count) << " lockmarks ==" << std::endl;
 }

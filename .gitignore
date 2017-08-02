@@ -24,3 +24,4 @@ semaphore/semaphore.VC.db
 
 *.csv
 vc/semaphore.vcxproj.user
+volta.a
