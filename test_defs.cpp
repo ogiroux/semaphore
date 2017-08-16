@@ -58,7 +58,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
   using thread = std::thread;
   using namespace std::experimental;
   template<class F>
-  int start_gpu_threads(uint32_t count, F f) { assert(!count); return 0; }
+  int start_gpu_threads(uint32_t count, F) { assert(!count); return 0; }
   void stop_gpu_threads(int) { }
   uint32_t max_gpu_threads() { return 0; }
   unsigned int dev = 0;

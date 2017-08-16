@@ -154,7 +154,7 @@ inline void __semaphore_wake_all(A &a)
 template<class Fn>
 __semaphore_abi bool __binary_semaphore_acquire_slow(
     atomic<binary_semaphore::count_type>& atom, atomic<binary_semaphore::count_type>& ticket,
-    atomic<binary_semaphore::count_type>& tocket, bool const& stolen, Fn fn) noexcept
+    atomic<binary_semaphore::count_type>& tocket, bool const&, Fn fn) noexcept
 {
     uint32_t const tick = ticket.fetch_add(1, std::memory_order_relaxed);
     uint32_t tock = tocket.load(std::memory_order_relaxed);
@@ -228,6 +228,8 @@ __semaphore_abi void binary_semaphore::__acquire_slow() noexcept
     auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
 #ifdef __semaphore_fast_path
         details::__semaphore_wait(__atom, old); 
+#else
+        (void)old;
 #endif
         return true;
     };
@@ -243,6 +245,8 @@ __semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_po
         auto rel_time = abs_time - details::__semaphore_clock::now();
         if(rel_time > std::chrono::microseconds(0))
             details::__semaphore_wait_timed(__atom, old, rel_time); 
+#else
+        (void)old;
 #endif
         return details::__semaphore_clock::now() < abs_time;
     };

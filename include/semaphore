@@ -311,7 +311,7 @@ struct counting_semaphore
     {
         release(term, semaphore_notify_all, order);
     }
-    __semaphore_abi inline void release(count_type term, semaphore_notify notify, std::memory_order order = std::memory_order_seq_cst) noexcept
+    __semaphore_abi inline void release(count_type term, semaphore_notify, std::memory_order order = std::memory_order_seq_cst) noexcept
     {
         count_type old = __frontbuffer.load(std::memory_order_relaxed);
         while (1)
@@ -463,7 +463,7 @@ struct counting_semaphore
 struct synchronic {
 
     template <class T>
-    __semaphore_abi_a void signal(const atomic<T>* a, semaphore_notify notify = semaphore_notify_all) noexcept
+    __semaphore_abi_a void signal(const atomic<T>*, semaphore_notify notify = semaphore_notify_all) noexcept
     {
 #ifndef __semaphore_cuda
         if (__semaphore_expect(!__reversebuffer.load(std::memory_order_relaxed), 1))
