@@ -25,7 +25,7 @@ __semaphore_abi inline bool binary_semaphore::try_acquire()
         if(__semaphore_expect(__atom.compare_exchange_strong(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed),1))
             return __stolen = true;
         for(; old != 0 && i < 64; ++i) {
-            details::__semaphore_yield();
+            __semaphore_yield();
             old = __atom.load(std::memory_order_relaxed);
         }
     }
@@ -44,7 +44,7 @@ __semaphore_abi bool binary_semaphore::try_acquire_until(const std::chrono::time
 {
     if (__semaphore_expect(try_acquire(), 1))
         return true;
-    return __acquire_slow_timed(abs_time);
+    return __acquire_slow_timed(std::chrono::time_point_cast<details::__semaphore_duration,Clock,Duration>(abs_time));
 }
 
 template <class Rep, class Period>

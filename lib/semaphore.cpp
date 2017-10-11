@@ -55,18 +55,18 @@ inline void __semaphore_wait(A &a, V v)
     auto i = __semaphore_readint(p);
     asm volatile("" ::
                      : "memory");
-    if (a.load(memory_order_relaxed) != v)
+    if (a.load(std::memory_order_relaxed) != v)
         return;
     syscall(SYS_futex, p, FUTEX_WAIT_PRIVATE, i, 0, 0, 0);
 }
 template <class A, class V, class Rep, class Period>
-void __semaphore_wait_timed(A &a, V v, const chrono::duration<Rep, Period> &t)
+void __semaphore_wait_timed(A &a, V v, const std::chrono::duration<Rep, Period> &t)
 {
     auto p = __semaphore_fixalign(a);
     auto i = __semaphore_readint(p);
     asm volatile("" ::
                      : "memory");
-    if (a.load(memory_order_relaxed) != v)
+    if (a.load(std::memory_order_relaxed) != v)
         return;
     syscall(SYS_futex, p, FUTEX_WAIT_PRIVATE, i, __semaphore_to_timespec(t), 0, 0);
 }
@@ -87,20 +87,20 @@ inline void __semaphore_wait(volatile A &a, V v)
     auto i = __semaphore_readint(p);
     asm volatile("" ::
                      : "memory");
-    if (a.load(memory_order_relaxed) != v)
+    if (a.load(std::memory_order_relaxed) != v)
         return;
     syscall(SYS_futex, p, FUTEX_WAIT, i, 0, 0, 0);
 }
 template <class A, class V, class Rep, class Period>
-void __semaphore_wait_timed(volatile A &a, V v, const chrono::duration<Rep, Period> &t)
+void __semaphore_wait_timed(volatile A &a, V v, const std::chrono::duration<Rep, Period> &t)
 {
     auto p = __semaphore_fixalign(a);
     auto i = __semaphore_readint(p);
     asm volatile("" ::
                      : "memory");
-    if (a.load(memory_order_relaxed) != v)
+    if (a.load(std::memory_order_relaxed) != v)
         return;
-    syscall(SYS_futex, p, FUTEX_WAIT, i, details::__semaphore_to_timespec(t), 0, 0);
+    syscall(SYS_futex, p, FUTEX_WAIT, i, __semaphore_to_timespec(t), 0, 0);
 }
 template <class A>
 inline void __semaphore_wake_one(volatile A &a)

@@ -64,14 +64,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
     #define __semaphore_ns std
 #endif //__semaphore_cuda
 
-namespace __semaphore_ns
-{
-namespace experimental
-{
-inline namespace v1
-{
-namespace details
-{
+namespace {
 
 #if defined(__semaphore_cuda)
 
@@ -138,10 +131,10 @@ inline bool __semaphore_sem_wait(__semaphore_sem_t &sem)
 }
 
 template <class Rep, class Period>
-inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<Rep, Period> const &delta)
+inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, std::chrono::duration<Rep, Period> const &delta)
 {
     assert(sem != NULL);
-    return WaitForSingleObject(sem, (DWORD)chrono::duration_cast<chrono::milliseconds>(delta).count()) == WAIT_OBJECT_0;
+    return WaitForSingleObject(sem, (DWORD)std::chrono::duration_cast<std::chrono::milliseconds>(delta).count()) == WAIT_OBJECT_0;
 }
 
 #endif //WIN32
@@ -154,11 +147,11 @@ inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<
 #define __semaphore_sem_t sem_t
 
 template <class Rep, class Period>
-timespec __semaphore_to_timespec(chrono::duration<Rep, Period> const &delta)
+timespec __semaphore_to_timespec(std::chrono::duration<Rep, Period> const &delta)
 {
     struct timespec ts;
-    ts.tv_sec = static_cast<long>(chrono::duration_cast<chrono::seconds>(delta).count());
-    ts.tv_nsec = static_cast<long>(chrono::duration_cast<chrono::nanoseconds>(delta).count());
+    ts.tv_sec = static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(delta).count());
+    ts.tv_nsec = static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count());
     return ts;
 }
 
@@ -184,7 +177,7 @@ inline bool __semaphore_sem_wait(__semaphore_sem_t &sem)
 }
 
 template <class Rep, class Period>
-inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<Rep, Period> const &delta)
+inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, std::chrono::duration<Rep, Period> const &delta)
 {
     auto const timespec = __semaphore_to_timespec(delta);
     return sem_timedwait(&sem, &timespec) == 0;
@@ -235,14 +228,25 @@ inline bool __semaphore_sem_wait(__semaphore_sem_t &sem)
 }
 
 template <class Rep, class Period>
-inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<Rep, Period> const &delta)
+inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, std::chrono::duration<Rep, Period> const &delta)
 {
-    return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, chrono::duration_cast<chrono::nanoseconds>(delta).count())) == 0;
+    return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count())) == 0;
 }
 
 #endif //__APPLE__
 
 #endif //__semaphore_cuda
+
+}
+
+namespace __semaphore_ns
+{
+namespace experimental
+{
+inline namespace v1
+{
+namespace details
+{
 
 using __semaphore_clock = std::conditional<std::chrono::high_resolution_clock::is_steady,
                                            std::chrono::high_resolution_clock,

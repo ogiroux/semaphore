@@ -118,7 +118,7 @@ __semaphore_abi inline void counting_semaphore::release(count_type term)
         __backbuffer.fetch_add(inc - 1);
         inc = 1;
 #endif //__semaphore_back_buffered
-        count_type const result = details::__semaphore_sem_post(__semaphore, inc);
+        count_type const result = __semaphore_sem_post(__semaphore, inc);
 #ifdef WIN32
         if (!result)
         {
@@ -143,7 +143,7 @@ __semaphore_abi bool counting_semaphore::try_acquire_for(std::chrono::duration<R
     __acquire_fast();
     if (__frontbuffer.fetch_sub(2, std::memory_order_acquire) >> 1 > 0)
         return true;
-    auto const result = details::__semaphore_sem_wait_timed(__semaphore, rel_time);
+    auto const result = __semaphore_sem_wait_timed(__semaphore, rel_time);
     if (result)
         __backfill();
     return result;
@@ -170,7 +170,7 @@ __semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired
     , __backbuffer{ 0 }
 #endif //__semaphore_back_buffered
 {
-    auto const result = details::__semaphore_sem_init(__semaphore, desired);
+    auto const result = __semaphore_sem_init(__semaphore, desired);
 #ifdef WIN32
     if (!result)
     {
@@ -186,7 +186,7 @@ __semaphore_abi inline counting_semaphore::~counting_semaphore()
 
     while (__frontbuffer.load(std::memory_order_acquire) & 1)
         ;
-    auto const result = details::__semaphore_sem_destroy(__semaphore);
+    auto const result = __semaphore_sem_destroy(__semaphore);
     assert(result);
 }
 
@@ -196,7 +196,7 @@ __semaphore_abi inline void counting_semaphore::__acquire_fast()
         return;
     for (int i = 0; i < 32; ++i)
     {
-        details::__semaphore_yield();
+        __semaphore_yield();
         if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
             return;
     }
@@ -205,7 +205,7 @@ __semaphore_abi inline void counting_semaphore::__acquire_fast()
 __semaphore_abi inline void counting_semaphore::__acquire_slow() {
     if (__frontbuffer.fetch_sub(2, std::memory_order_acquire) >> 1 > 0)
         return;
-    count_type const result = details::__semaphore_sem_wait(__semaphore);
+    count_type const result = __semaphore_sem_wait(__semaphore);
 #ifdef WIN32
     if (!result)
     {   
@@ -232,7 +232,7 @@ __semaphore_abi inline void counting_semaphore::__backfill()
         __backbuffer.fetch_add(1, std::memory_order_relaxed); // put back
         return;
     }
-    auto const result = details::__semaphore_sem_post(__semaphore, 1);
+    auto const result = __semaphore_sem_post(__semaphore, 1);
     assert(result);
 #endif //__semaphore_back_buffered
 }

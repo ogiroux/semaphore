@@ -14,7 +14,7 @@ __semaphore_abi inline void condition_variable_atomic::__notify()
 template <class A, class Predicate>
 __semaphore_abi void condition_variable_atomic::__wait(A& object, Predicate pred, std::memory_order order)
 {
-    for (int i = 0; i < 16; ++i, details::__semaphore_yield())
+    for (int i = 0; i < 16; ++i, __semaphore_yield())
         if (__semaphore_expect(pred(object.load(order)), 1))
             return;
     details::__semaphore_exponential_backoff b;
@@ -49,7 +49,7 @@ __semaphore_abi void condition_variable_atomic::__wait(A& object, Predicate pred
 template <class A, class Predicate, class Clock, class Duration>
 __semaphore_abi bool condition_variable_atomic::__wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 {
-    for (int i = 0; i < 16; ++i, details::__semaphore_yield())
+    for (int i = 0; i < 16; ++i, __semaphore_yield())
         if (__semaphore_expect(pred(object.load(order)), 1))
             return true;
     details::__semaphore_exponential_backoff b;
