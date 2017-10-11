@@ -160,7 +160,7 @@ namespace details
 template<class Fn>
 __semaphore_abi bool __binary_semaphore_acquire_slow(
     atomic<binary_semaphore::count_type>& atom, atomic<binary_semaphore::count_type>& ticket,
-    atomic<binary_semaphore::count_type>& tocket, bool const& stolen, Fn fn) noexcept
+    atomic<binary_semaphore::count_type>& tocket, bool const& stolen, Fn fn)
 {
     uint32_t const tick = ticket.fetch_add(1, std::memory_order_relaxed);
     uint32_t tock = tocket.load(std::memory_order_relaxed);
@@ -213,7 +213,7 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
 } //details
 
 #ifdef __semaphore_fast_path
-__semaphore_abi void binary_semaphore::__release_slow(count_type old) noexcept
+__semaphore_abi void binary_semaphore::__release_slow(count_type old)
 {
     count_type lock = 0;
     do {
@@ -272,7 +272,7 @@ __semaphore_abi bool counting_semaphore::__fetch_sub_if_slow(counting_semaphore:
 }
 
 #ifdef __semaphore_fast_path
-void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, counting_semaphore::count_type old, std::memory_order order, semaphore_notify notify) noexcept
+void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, counting_semaphore::count_type old, std::memory_order order, semaphore_notify notify)
 {
     while (1)
     {

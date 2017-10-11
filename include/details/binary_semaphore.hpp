@@ -44,7 +44,7 @@ __semaphore_abi bool binary_semaphore::try_acquire_until(const std::chrono::time
 {
     if (__semaphore_expect(try_acquire(), 1))
         return true;
-    return __acquire_slow_timed(abs_time - details::__semaphore_clock::now());
+    return __acquire_slow_timed(abs_time - Clock::now());
 }
 
 template <class Rep, class Period>
