@@ -44,7 +44,7 @@ __semaphore_abi bool binary_semaphore::try_acquire_until(const std::chrono::time
 {
     if (__semaphore_expect(try_acquire(), 1))
         return true;
-    return __acquire_slow_timed(std::chrono::time_point_cast<details::__semaphore_duration,Clock,Duration>(abs_time));
+    return __acquire_slow_timed(abs_time - details::__semaphore_clock::now());
 }
 
 template <class Rep, class Period>
@@ -52,7 +52,7 @@ __semaphore_abi bool binary_semaphore::try_acquire_for(const std::chrono::durati
 {
     if (__semaphore_expect(try_acquire(), 1))
         return true;
-    return __acquire_slow_timed(details::__semaphore_clock::now() + rel_time);
+    return __acquire_slow_timed(rel_time);
 }
 
 __semaphore_abi inline binary_semaphore::binary_semaphore(count_type desired) : __atom(desired ? 0 : 1), __ticket(0), __tocket(0), __stolen(false)

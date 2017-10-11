@@ -74,7 +74,7 @@ __semaphore_abi bool condition_variable_atomic::__wait_until(A& object, Predicat
             }
             return true;
         }
-        __sem.__acquire_slow_timed(abs_time);
+        __sem.__acquire_slow_timed(abs_time - details::__semaphore_clock::now());
 #else
         b.sleep();
 #endif

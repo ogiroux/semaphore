@@ -192,7 +192,7 @@ inline void __semaphore_yield()
 
 inline void __semaphore_yield()
 {
-    this_thread::yield();
+    std::this_thread::yield();
 }
 
 #endif //__linux__

@@ -43,7 +43,7 @@ __semaphore_abi bool counting_semaphore::try_acquire_until(std::chrono::time_poi
     {
         bool success = __acquire_fast();
         if (__semaphore_expect(!success, 0))
-            success = __acquire_slow_timed(abs_time);
+            success = __acquire_slow_timed(abs_time - details::__semaphore_clock::now());
         if (__semaphore_expect(!success, 0))
             return false;
     }
@@ -57,7 +57,7 @@ __semaphore_abi bool counting_semaphore::try_acquire_for(std::chrono::duration<R
     if (__semaphore_expect(__fetch_sub_if(), 1))
         return true;
     else
-        return try_acquire_until(details::__semaphore_clock::now() + std::chrono::duration_cast<std::chrono::nanoseconds>(rel_time));
+        return try_acquire_until(details::__semaphore_clock::now() + rel_time);
 }
 
 __semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired) : atom(desired << __shift)
@@ -92,7 +92,7 @@ __semaphore_abi inline bool counting_semaphore::__acquire_fast()
         return true;
     for (int i = 0; i < 32; ++i)
     {
-        details::__semaphore_yield();
+        __semaphore_yield();
         value = (atom.load(std::memory_order_acquire) >> __shift);
         if (__semaphore_expect(value >= 1, 1))
             return true;
@@ -217,8 +217,7 @@ __semaphore_abi inline void counting_semaphore::__acquire_slow() {
     __backfill();
 }
 
-template<class Clock, class Duration>
-__semaphore_abi void counting_semaphore::__acquire_slow_timed(std::chrono::time_point<Clock, Duration> const& abs_time) {
+__semaphore_abi void inline counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) {
     assert(0);
 }
 

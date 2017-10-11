@@ -91,12 +91,12 @@ public:
   static constexpr count_type __contbit = 8;
 
 #ifdef __semaphore_fast_path
-    __semaphore_abi void __release_slow(count_type old) noexcept;
+    __semaphore_abi void __release_slow(count_type old);
 #endif
 
-    __semaphore_abi void __acquire_slow() noexcept;
+    __semaphore_abi void __acquire_slow();
 
-    bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &) noexcept;
+    __semaphore_abi bool __acquire_slow_timed(std::chrono::nanoseconds const&);
 
   atomic<count_type> __atom;
   atomic<count_type> __ticket;
@@ -148,16 +148,16 @@ public:
 #ifdef __semaphore_fast_path
   __semaphore_abi void __fetch_add_slow(count_type term, count_type old);
 #endif //__semaphore_fast_path
-  __semaphore_abi bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &abs_time);
+
   __semaphore_abi void __acquire_slow();
+  __semaphore_abi bool __acquire_slow_timed(std::chrono::nanoseconds const&);
   __semaphore_abi inline bool __acquire_fast();
 
   atomic<count_type> atom;
 #else //__semaphore_sem
   __semaphore_abi inline void __acquire_fast();
   __semaphore_abi inline void __acquire_slow();
-  template<class Clock, class Duration>
-    __semaphore_abi inline void __acquire_slow_timed(std::chrono::time_point<Clock, Duration> const& abs_time);
+  __semaphore_abi inline void __acquire_slow_timed(std::chrono::nanoseconds const&);
   __semaphore_abi inline void __backfill();
 
   __semaphore_sem_t __semaphore;

@@ -229,7 +229,7 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old) noexcept
 }
 #endif //__semaphore_fast_path
 
-__semaphore_abi void binary_semaphore::__acquire_slow() noexcept
+__semaphore_abi void binary_semaphore::__acquire_slow()
 {
     auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
 #ifdef __semaphore_fast_path
@@ -242,11 +242,11 @@ __semaphore_abi void binary_semaphore::__acquire_slow() noexcept
 
 #ifndef __semaphore_cuda
 
-__semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const& abs_time) noexcept 
+__semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) 
 {
     auto const fn = [=](uint32_t old) __semaphore_abi -> bool { 
+        auto const abs_time = details::__semaphore_clock::now() + rel_time;
 #ifdef __semaphore_fast_path
-        auto rel_time = abs_time - details::__semaphore_clock::now();
         if(rel_time > std::chrono::microseconds(0))
             __semaphore_wait_timed(__atom, old, rel_time); 
 #endif //__semaphore_fast_path
@@ -303,7 +303,7 @@ void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, c
 }
 #endif //__semaphore_fast_path
 
-__semaphore_abi bool counting_semaphore::__acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &abs_time)
+__semaphore_abi bool counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const&) 
 {
     assert(0);
 }
