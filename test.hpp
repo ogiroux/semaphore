@@ -63,7 +63,7 @@ struct synchronic_mutex {
     __test_abi void unlock() {
 
         __locked.store(false, std::memory_order_release);
-        atomic_signal(&__locked);
+        atomic_notify_one(&__locked);
     }
 
     atomic<bool> __locked{ false };

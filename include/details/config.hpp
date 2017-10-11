@@ -26,6 +26,9 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#ifndef __semaphore_config__
+#define __semaphore_config__
+
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -34,7 +37,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifdef WIN32
 #include <windows.h>
-#endif
+#endif //WIN32
 
 #ifdef __linux__
 #include <time.h>
@@ -45,23 +48,24 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <climits>
 #include <semaphore.h>
-#endif
+#endif //__linux__
 
 #ifdef __APPLE__
 #include <dispatch/dispatch.h>
-#endif
+#endif //__APPLE__
 
 #if defined(__CUDA_ARCH__) && !defined(__has_cuda_nanosleep)
     #warning "Use of semaphores is iffy without CUDA support for nanosleep (CUDA version TBD)."
-#endif
+#endif //__CUDA_ARCH__
 
 #ifdef __semaphore_cuda
-namespace cuda
-{
+    #define __semaphore_ns cuda
 #else
-namespace std
+    #define __semaphore_ns std
+#endif //__semaphore_cuda
+
+namespace __semaphore_ns
 {
-#endif
 namespace experimental
 {
 inline namespace v1
@@ -73,7 +77,7 @@ namespace details
 
 #ifndef __has_cuda_atomic
     #error "CUDA atomic<T> support is required"
-#endif
+#endif //__has_cuda_atomic
 
 #define __semaphore_abi __host__ __device__
 #define __semaphore_managed __managed__
@@ -88,54 +92,67 @@ __semaphore_abi inline void __semaphore_yield()
 }
 #define __semaphore_expect(c, e) (c)
 
-#else
+#else //__semaphore_cuda
 
 #define __semaphore_abi
 #define __semaphore_managed
 
 #if defined(__GNUC__)
-#define __semaphore_expect __builtin_expect
-#else
-#define __semaphore_expect(c, e) (c)
-#endif
+    #define __semaphore_expect __builtin_expect
+#else //__GNUC__
+    #define __semaphore_expect(c, e) (c)
+#endif //__GNUC__
 
 #ifdef WIN32
-typedef HANDLE __semaphore_sem_t;
+
+#if _WIN32_WINNT >= 0x0602
+    #define __semaphore_fast_path
+#endif //_WIN32_WINNT
+#define __semaphore_sem
+#define  __semaphore_sem_t HANDLE
+
 inline bool __semaphore_sem_init(__semaphore_sem_t &sem, int init)
 {
     bool const ret = (sem = CreateSemaphore(NULL, init, INT_MAX, NULL)) != NULL;
     assert(ret);
     return ret;
 }
+
 inline bool __semaphore_sem_destroy(__semaphore_sem_t &sem)
 {
     assert(sem != NULL);
     return CloseHandle(sem) == TRUE;
 }
+
 inline bool __semaphore_sem_post(__semaphore_sem_t &sem, int inc)
 {
     assert(sem != NULL);
     assert(inc > 0);
     return ReleaseSemaphore(sem, inc, NULL) == TRUE;
 }
+
 inline bool __semaphore_sem_wait(__semaphore_sem_t &sem)
 {
     assert(sem != NULL);
     return WaitForSingleObject(sem, INFINITE) == WAIT_OBJECT_0;
 }
+
 template <class Rep, class Period>
 inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<Rep, Period> const &delta)
 {
     assert(sem != NULL);
     return WaitForSingleObject(sem, (DWORD)chrono::duration_cast<chrono::milliseconds>(delta).count()) == WAIT_OBJECT_0;
 }
-#if _WIN32_WINNT >= 0x0602
-#define __semaphore_fast_path
-#endif
-#define __semaphore_sem
+
 #endif //WIN32
 
 #ifdef __linux__
+
+#define __semaphore_fast_path
+#define __semaphore_back_buffered
+#define __semaphore_sem
+#define __semaphore_sem_t sem_t
+
 template <class Rep, class Period>
 timespec __semaphore_to_timespec(chrono::duration<Rep, Period> const &delta)
 {
@@ -144,76 +161,88 @@ timespec __semaphore_to_timespec(chrono::duration<Rep, Period> const &delta)
     ts.tv_nsec = static_cast<long>(chrono::duration_cast<chrono::nanoseconds>(delta).count());
     return ts;
 }
-typedef sem_t __semaphore_sem_t;
+
 inline bool __semaphore_sem_init(__semaphore_sem_t &sem, int init)
 {
     return sem_init(&sem, 0, init) == 0;
 }
+
 inline bool __semaphore_sem_destroy(__semaphore_sem_t &sem)
 {
     return sem_destroy(&sem) == 0;
 }
+
 inline bool __semaphore_sem_post(__semaphore_sem_t &sem, int inc)
 {
     assert(inc == 1);
     return sem_post(&sem) == 0;
 }
+
 inline bool __semaphore_sem_wait(__semaphore_sem_t &sem)
 {
     return sem_wait(&sem) == 0;
 }
+
 template <class Rep, class Period>
 inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<Rep, Period> const &delta)
 {
     auto const timespec = __semaphore_to_timespec(delta);
     return sem_timedwait(&sem, &timespec) == 0;
 }
+
 inline void __semaphore_yield()
 {
     sched_yield();
 }
-#define __semaphore_fast_path
-#define __semaphore_back_buffered
-#define __semaphore_sem
-#else
+
+#else //__linux__
+
 inline void __semaphore_yield()
 {
     this_thread::yield();
 }
-#endif
+
+#endif //__linux__
 
 #ifdef __APPLE__
-typedef dispatch_semaphore_t __semaphore_sem_t;
+
+#define __semaphore_back_buffered
+#define __semaphore_sem
+#define __semaphore_sem_t dispatch_semaphore_t
+
 inline bool __semaphore_sem_init(__semaphore_sem_t &sem, int init)
 {
     return (sem = dispatch_semaphore_create(init)) != NULL;
 }
+
 inline bool __semaphore_sem_destroy(__semaphore_sem_t &sem)
 {
     assert(sem != NULL);
     dispatch_release(sem);
     return true;
 }
+
 inline bool __semaphore_sem_post(__semaphore_sem_t &sem, int inc)
 {
     assert(inc == 1);
     dispatch_semaphore_signal(sem);
     return true;
 }
+
 inline bool __semaphore_sem_wait(__semaphore_sem_t &sem)
 {
     return dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER) == 0;
 }
+
 template <class Rep, class Period>
 inline bool __semaphore_sem_wait_timed(__semaphore_sem_t &sem, chrono::duration<Rep, Period> const &delta)
 {
     return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, chrono::duration_cast<chrono::nanoseconds>(delta).count())) == 0;
 }
-#define __semaphore_back_buffered
-#define __semaphore_sem
-#endif
 
-#endif
+#endif //__APPLE__
+
+#endif //__semaphore_cuda
 
 using __semaphore_clock = std::conditional<std::chrono::high_resolution_clock::is_steady,
                                            std::chrono::high_resolution_clock,
@@ -242,14 +271,17 @@ struct __semaphore_exponential_backoff
             std::this_thread::sleep_for(std::chrono::nanoseconds(this_time));
 #elif defined(__has_cuda_nanosleep)
             __mme_nanosleep(time);
-#endif
+#endif //__CUDA_ARCH__
         }
         time += min_time + (time >> 2);
         if (time > max_time) 
             time = max_time;
     }
 };
-}
-}
-}
-}
+
+} //details
+} //v1
+} //experimental
+} //__semaphore_ns
+
+#endif //__semaphore_config__

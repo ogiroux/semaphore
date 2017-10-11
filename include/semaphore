@@ -31,115 +31,64 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "details/config.hpp"
 
-#ifdef __semaphore_cuda
-namespace cuda
+namespace __semaphore_ns
 {
-#else
-namespace std
-{
-#endif
 namespace experimental
 {
 inline namespace v1
 {
 
-// 32.10, semaphore type and operations
-enum semaphore_notify
-{
-    semaphore_notify_all,
-    semaphore_notify_one,
-    semaphore_notify_none
-};
-struct binary_semaphore;
-struct counting_semaphore;
-struct synchronic;
-
-// 32.10.2, initialization
-#define ATOMIC_SEM_INIT 0 //see below
-
-// 32.10.3, atomic free functions for waiting
+// 32.10, waiting and notifying functions
 template <class T>
-__semaphore_abi void atomic_signal_explicit(const atomic<T> *, semaphore_notify);
+__semaphore_abi void atomic_notify_one(const volatile atomic<T>*);
 template <class T>
-__semaphore_abi void atomic_signal(const atomic<T> *);
+__semaphore_abi void atomic_notify_one(const atomic<T>*);
+template <class T>
+__semaphore_abi void atomic_notify_all(const volatile atomic<T>*);
+template <class T>
+__semaphore_abi void atomic_notify_all(const atomic<T>*);
 template <class T, class V>
-__semaphore_abi void atomic_wait_explicit(const atomic<T> *, V, std::memory_order);
+__semaphore_abi void atomic_wait_explicit(const volatile atomic<T>*, V, std::memory_order);
 template <class T, class V>
-__semaphore_abi void atomic_wait(const atomic<T> *, V);
+__semaphore_abi void atomic_wait_explicit(const atomic<T>*, V, std::memory_order);
 template <class T, class V>
-__semaphore_abi bool atomic_try_wait_explicit(const atomic<T> *, V, std::memory_order);
+__semaphore_abi void atomic_wait(const volatile atomic<T>*, V);
 template <class T, class V>
-__semaphore_abi bool atomic_try_wait(const atomic<T> *,V);
+__semaphore_abi void atomic_wait(const atomic<T>*, V);
 
-struct binary_semaphore
-{
-    using count_type = uint32_t;
+// 33.5.1, condition variables
+class condition_variable_atomic;
 
-    static constexpr count_type max = 1;
+// 33.7, semaphore type and operations
+class binary_semaphore;
+class counting_semaphore;
 
-    __semaphore_abi inline void release() noexcept
-    {
-        if(__stolen)
-            __stolen = false;
-        else
-#ifdef __semaphore_cuda
-            __tocket.fetch_add(1, std::memory_order_relaxed);
-#else
-            __tocket.store(__tocket.load(std::memory_order_relaxed)+1, std::memory_order_relaxed);
-#endif
-#ifdef __semaphore_fast_path
-        count_type old = __valubit;
-        if (__semaphore_expect(!__atom.compare_exchange_strong(old, 0, std::memory_order_acquire, std::memory_order_relaxed), 0))
-            __release_slow(old);
-#else
-        __atom.fetch_and(~__valubit, std::memory_order_acquire);
-#endif
-    }
-    __semaphore_abi inline bool try_acquire() noexcept
-    {
-        count_type old = 0;
-        for (int i = 0;i < 64; ++i) {
-            if(__semaphore_expect(__atom.compare_exchange_strong(old = 0, __valubit, std::memory_order_acquire, std::memory_order_relaxed),1))
-                return __stolen = true;
-            for(; old != 0 && i < 64; ++i) {
-                details::__semaphore_yield();
-                old = __atom.load(std::memory_order_relaxed);
-            }
-        }
-        return false;
-    }
-    __semaphore_abi inline void acquire() noexcept
-    {
-        if (__semaphore_expect(try_acquire(), 1))
-            return;
-        __acquire_slow();
-    }
-    template <class Clock, class Duration>
-    __semaphore_abi bool try_acquire_until(const std::chrono::time_point<Clock, Duration>& abs_time)
-    {
-        if (__semaphore_expect(try_acquire(), 1))
-            return true;
-        return __acquire_slow_timed(abs_time);
-    }
-    template <class Rep, class Period>
-    __semaphore_abi bool try_acquire_for(const std::chrono::duration<Rep, Period>& rel_time)
-    {
-        if (__semaphore_expect(try_acquire(), 1))
-            return true;
-        return __acquire_slow_timed(details::__semaphore_clock::now() + rel_time);
-    }
+// 33.7.2, binary semaphore
+class binary_semaphore {
+public:
+  using count_type = uint32_t; // see 33.7.2.1
+  static constexpr count_type max = 1;
 
-    __semaphore_abi constexpr binary_semaphore(count_type desired) noexcept : __atom(desired ? 0 : 1), __ticket(0), __tocket(0), __stolen(false)
-    {
-    }
+  __semaphore_abi binary_semaphore(count_type = 0);
+  __semaphore_abi ~binary_semaphore();
 
-    binary_semaphore(const binary_semaphore&) = delete;
-    binary_semaphore &operator=(const binary_semaphore&) = delete;
+  binary_semaphore(const binary_semaphore&) = delete;
+  binary_semaphore& operator=(const binary_semaphore&) = delete;
 
-    static constexpr count_type __valubit = 1;
-    static constexpr count_type __lockbit = 2;
-    static constexpr count_type __slowbit = 4;
-    static constexpr count_type __contbit = 8;
+  __semaphore_abi void release();
+  __semaphore_abi void acquire();
+  __semaphore_abi bool try_acquire();
+  template <class Clock, class Duration>
+    __semaphore_abi bool try_acquire_until(std::chrono::time_point<Clock, Duration> const&);
+  template <class Rep, class Period>
+    __semaphore_abi bool try_acquire_for(std::chrono::duration<Rep, Period> const&);
+
+  // implementation-defined
+
+  static constexpr count_type __valubit = 1;
+  static constexpr count_type __lockbit = 2;
+  static constexpr count_type __slowbit = 4;
+  static constexpr count_type __contbit = 8;
 
 #ifdef __semaphore_fast_path
     __semaphore_abi void __release_slow(count_type old) noexcept;
@@ -149,495 +98,165 @@ struct binary_semaphore
 
     bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &) noexcept;
 
-    atomic<count_type> __atom;
-    atomic<count_type> __ticket;
-    atomic<count_type> __tocket;
-    bool __stolen;
+  atomic<count_type> __atom;
+  atomic<count_type> __ticket;
+  atomic<count_type> __tocket;
+  bool __stolen;
 };
+
+// 33.7.3, counting semaphore
+class counting_semaphore {
+public:
+#ifndef __semaphore_sem
+  using count_type = uint32_t; // see 33.7.3.1
+#ifdef __semaphore_fast_path
+  static constexpr uint32_t __valumask = ~3,
+                            __contmask = 2,
+                            __lockmask = 1,
+                            __shift = 2;
+#else //__semaphore_fast_path
+  static constexpr uint32_t __valumask = ~0,
+                            __contmask = 0,
+                            __lockmask = 0,
+                            __shift = 0;
+#endif //__semaphore_fast_path
+  static constexpr count_type max = (__valumask >> (__shift ? __shift : 1)); // see 33.7.3.2
+#else //__semaphore_sem
+  using count_type = int32_t; // see 33.7.3.1
+  static constexpr count_type max = (numeric_limits<count_type>::max)() >> 1; // see 33.7.3.2
+#endif //__semaphore_sem
+
+  __semaphore_abi counting_semaphore(count_type = 0);
+  __semaphore_abi ~counting_semaphore();
+
+  counting_semaphore(const counting_semaphore&) = delete;
+  counting_semaphore& operator=(const counting_semaphore&) = delete;
+
+  __semaphore_abi void release(count_type = 1);
+  __semaphore_abi void acquire();
+  __semaphore_abi bool try_acquire();
+  template <class Clock, class Duration>
+    __semaphore_abi bool try_acquire_until(std::chrono::time_point<Clock, Duration> const&);
+  template <class Rep, class Period>
+    __semaphore_abi bool try_acquire_for(std::chrono::duration<Rep, Period> const&);
+
+  // implementation-defined
 
 #ifndef __semaphore_sem
-
-struct counting_semaphore
-{
-    using count_type = int32_t;
-
-private:
+  __semaphore_abi bool __fetch_sub_if_slow(count_type old);
+  __semaphore_abi bool __fetch_sub_if();
 #ifdef __semaphore_fast_path
-    static constexpr count_type __valumask = ~3,
-                                __contmask = 2,
-                                __lockmask = 1,
-                                __shift = 2;
-#else
-    static constexpr count_type __valumask = ~0,
-                                __contmask = 0,
-                                __lockmask = 0,
-                                __shift = 0;
-#endif
+  __semaphore_abi void __fetch_add_slow(count_type term, count_type old);
+#endif //__semaphore_fast_path
+  __semaphore_abi bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &abs_time);
+  __semaphore_abi void __acquire_slow();
+  __semaphore_abi inline bool __acquire_fast();
+
+  atomic<count_type> atom;
+#else //__semaphore_sem
+  __semaphore_abi inline void __acquire_fast();
+  __semaphore_abi inline void __acquire_slow();
+  template<class Clock, class Duration>
+    __semaphore_abi inline void __acquire_slow_timed(std::chrono::time_point<Clock, Duration> const& abs_time);
+  __semaphore_abi inline void __backfill();
+
+  __semaphore_sem_t __semaphore;
+  atomic<count_type> __frontbuffer;
+#ifdef __semaphore_back_buffered
+  atomic<count_type> __backbuffer;
+#endif //__semaphore_back_buffered
+#endif //__semaphore_sem
+  friend class condition_variable_atomic;
+};
+
+// 33.5.5, atomic condition variable
+class alignas(64) condition_variable_atomic {
 public:
-    static constexpr count_type max = (__valumask >> (__shift ? __shift : 1));
 
-    __semaphore_abi inline void release(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        release(1, semaphore_notify_all, order);
-    }
-    __semaphore_abi inline void release(count_type term, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        release(term, semaphore_notify_all, order);
-    }
-    __semaphore_abi inline void release(count_type term, semaphore_notify notify, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
+  __semaphore_abi condition_variable_atomic();
+  __semaphore_abi ~condition_variable_atomic();
 
-#ifdef __semaphore_fast_path
-        count_type old = 0, set = term << __shift;
-        bool success = atom.compare_exchange_weak(old, set, order, std::memory_order_relaxed);
-        while (__semaphore_expect(!success && !(old & (__contmask | __lockmask)), 0))
-        {
-            set = old + (term << __shift);
-            success = atom.compare_exchange_weak(old, set, order, std::memory_order_relaxed);
-        }
-        if (__semaphore_expect(!success, 0))
-            __fetch_add_slow(term, old, order, notify);
-#else
-        count_type old = atom.fetch_add(term, order);
-#endif
-    }
+  condition_variable_atomic(const condition_variable_atomic&) = delete;
+  condition_variable_atomic& operator=(const condition_variable_atomic&) = delete;
 
-    __semaphore_abi inline void acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
+  template <class T> 
+    __semaphore_abi void notify_one(const atomic<T>&);
+  template <class T> 
+    __semaphore_abi void notify_one(const volatile atomic<T>&);
+  template <class T> 
+    __semaphore_abi void notify_all(const atomic<T>&);
+  template <class T> 
+    __semaphore_abi void notify_all(const volatile atomic<T>&);
+  template <class T> 
+    __semaphore_abi void wait(const volatile atomic<T>&, T, 
+                              std::memory_order = std::memory_order_seq_cst);
+  template <class T> 
+    __semaphore_abi void wait(const atomic<T>&, T, 
+                              std::memory_order = std::memory_order_seq_cst);              
+  template <class T, class Predicate> 
+    __semaphore_abi void wait(const volatile atomic<T>&, Predicate pred, 
+                              std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Predicate> 
+    __semaphore_abi void wait(const atomic<T>&, Predicate pred, 
+                              std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Clock, class Duration>
+    __semaphore_abi bool wait_until(const volatile atomic<T>&, T, 
+                                    std::chrono::time_point<Clock, Duration> const&, 
+                                    std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Clock, class Duration>
+    __semaphore_abi bool wait_until(const atomic<T>&, T, 
+                                    std::chrono::time_point<Clock, Duration> const&, 
+                                    std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Predicate, class Clock, class Duration>
+    __semaphore_abi bool wait_until(const volatile atomic<T>&, Predicate pred,
+                                    std::chrono::time_point<Clock, Duration> const&, 
+                                    std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Predicate, class Clock, class Duration>
+    __semaphore_abi bool wait_until(const atomic<T>&, Predicate pred,
+                                    std::chrono::time_point<Clock, Duration> const&, 
+                                    std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Rep, class Period>
+    __semaphore_abi bool wait_for(const volatile atomic<T>&, T, 
+                                  std::chrono::duration<Rep, Period> const&, 
+                                  std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Rep, class Period>
+    __semaphore_abi bool wait_for(const atomic<T>&, T, 
+                                  std::chrono::duration<Rep, Period> const&, 
+                                  std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Predicate, class Rep, class Period>
+    __semaphore_abi bool wait_for(const volatile atomic<T>&, Predicate pred,
+                                  std::chrono::duration<Rep, Period> const&, 
+                                  std::memory_order = std::memory_order_seq_cst);
+  template <class T, class Predicate, class Rep, class Period>
+    __semaphore_abi bool wait_for(const atomic<T>&, Predicate pred,
+                                  std::chrono::duration<Rep, Period> const&, 
+                                  std::memory_order = std::memory_order_seq_cst);
 
-        while (__semaphore_expect(!__fetch_sub_if(order), 0))
-        {
-            bool const success = __acquire_fast(order);
-            if (__semaphore_expect(!success, 0))
-                __acquire_slow(order);
-        }
-    }
-    __semaphore_abi inline bool try_acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
+  // implementation-defined
 
-        return __fetch_sub_if(order);
-    }
-    template <class Clock, class Duration>
-    __semaphore_abi bool try_acquire_until(std::chrono::time_point<Clock, Duration> const &abs_time, std::memory_order order = std::memory_order_seq_cst)
-    {
-
-        while (__semaphore_expect(!__fetch_sub_if(order), 0))
-        {
-            bool success = __acquire_fast(order);
-            if (__semaphore_expect(!success, 0))
-                success = __acquire_slow_timed(abs_time, order);
-            if (__semaphore_expect(!success, 0))
-                return false;
-        }
-        return true;
-    }
-    template <class Rep, class Period>
-    __semaphore_abi bool try_acquire_for(std::chrono::duration<Rep, Period> const &rel_time, std::memory_order order = std::memory_order_seq_cst)
-    {
-
-        if (__semaphore_expect(__fetch_sub_if(order), 1))
-            return true;
-        else
-            return try_acquire_until(details::__semaphore_clock::now() + std::chrono::duration_cast<std::chrono::nanoseconds>(rel_time), order);
-    }
-
-    __semaphore_abi constexpr counting_semaphore(count_type desired) noexcept : atom(desired << __shift)
-    {
-    }
-    counting_semaphore(const counting_semaphore &) = delete;
-    counting_semaphore &operator=(const counting_semaphore &) = delete;
-
-private:
-    __semaphore_abi bool __fetch_sub_if_slow(count_type old, std::memory_order order) noexcept;
-
-    __semaphore_abi bool __fetch_sub_if(std::memory_order order) noexcept
-    {
-
-        count_type old = 1 << __shift, set = 0;
-        bool retcode = atom.compare_exchange_weak(old, set, order, std::memory_order_relaxed);
-        if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0))
-        {
-            old &= __valumask;
-            set = old - (1 << __shift);
-            retcode = atom.compare_exchange_weak(old, set, order, std::memory_order_relaxed);
-        }
-        if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0))
-            retcode = __fetch_sub_if_slow(old, order);
-        return retcode;
-    }
-
-#ifdef __semaphore_fast_path
-    __semaphore_abi void __fetch_add_slow(count_type term, count_type old, std::memory_order order, semaphore_notify notify) noexcept;
-#endif
-
-    __semaphore_abi bool __acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &abs_time, std::memory_order order) noexcept;
-
-    __semaphore_abi void __acquire_slow(std::memory_order order) noexcept;
-
-    __semaphore_abi inline bool __acquire_fast(std::memory_order order) noexcept
-    {
-
-        auto value = (atom.load(order) >> __shift);
-        if (__semaphore_expect(value >= 1, 1))
-            return true;
-        for (int i = 0; i < 32; ++i)
-        {
-            details::__semaphore_yield();
-            value = (atom.load(order) >> __shift);
-            if (__semaphore_expect(value >= 1, 1))
-                return true;
-        }
-        return false;
-    }
-
-    atomic<count_type> atom;
-
-    friend struct synchronic;
-};
-
-#else
-
-struct counting_semaphore
-{
-    using count_type = int32_t;
-
-    static constexpr count_type max = (numeric_limits<count_type>::max)() >> 1;
-
-    __semaphore_abi inline void release(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        release(1, semaphore_notify_all, order);
-    }
-    __semaphore_abi inline void release(count_type term, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        release(term, semaphore_notify_all, order);
-    }
-    __semaphore_abi inline void release(count_type term, semaphore_notify notify, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        count_type old = __frontbuffer.load(std::memory_order_relaxed);
-        while (1)
-        {
-            old &= ~1;
-            if (__frontbuffer.compare_exchange_weak(old, old + (term << 1) + 1, order, std::memory_order_relaxed))
-                break;
-        }
-        if (old >> 1 < 0)
-        { // was it depleted?
-            count_type inc = (min)(-(old >> 1), term);
-#ifdef __semaphore_back_buffered
-            __backbuffer.fetch_add(inc - 1);
-            inc = 1;
-#endif
-            count_type const result = details::__semaphore_sem_post(__semaphore, inc);
-#ifdef WIN32
-            if (!result)
-            {
-                auto d = GetLastError();
-                assert(d == ERROR_SUCCESS);
-            }
-#endif
-            assert(result);
-        }
-        __frontbuffer.fetch_sub(1);
-    }
-
-    inline void acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        __acquire_fast();
-        __acquire_slow(order);
-    }
-
-    template <class Rep, class Period>
-    bool try_acquire_for(std::chrono::duration<Rep, Period> const &rel_time, std::memory_order order = std::memory_order_seq_cst)
-    {
-
-        __acquire_fast();
-        if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
-            return true;
-        auto const result = details::__semaphore_sem_wait_timed(__semaphore, rel_time);
-        if (result)
-            __backfill();
-        return result;
-    }
-    template <class Clock, class Duration>
-    bool try_acquire_until(std::chrono::time_point<Clock, Duration> const &abs_time, std::memory_order order = std::memory_order_seq_cst)
-    {
-
-        return try_acquire_for(abs_time - Clock::now(), order);
-    }
-    inline bool try_acquire(std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-
-        __acquire_fast();
-        if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
-            return true;
-        return try_acquire_for(std::chrono::nanoseconds(0), order);
-    }
-    counting_semaphore(count_type desired) noexcept
-        : __frontbuffer { desired << 1 }
-#ifdef __semaphore_back_buffered
-        , __backbuffer{ 0 }
-#endif
-    {
-        auto const result = details::__semaphore_sem_init(__semaphore, desired);
-#ifdef WIN32
-        if (!result)
-        {
-            auto d = GetLastError();
-            assert(d == ERROR_SUCCESS);
-        }
-#endif
-        assert(result);
-    }
-    ~counting_semaphore()
-    {
-
-        while (__frontbuffer.load(std::memory_order_acquire) & 1)
-            ;
-        auto const result = details::__semaphore_sem_destroy(__semaphore);
-        assert(result);
-    }
-    counting_semaphore(const counting_semaphore &) = delete;
-    counting_semaphore &operator=(const counting_semaphore &) = delete;
-
-  private:
-    inline void __acquire_fast() noexcept
-    {
-
-        if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
-            return;
-        for (int i = 0; i < 32; ++i)
-        {
-            details::__semaphore_yield();
-            if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
-                return;
-        }
-    }
-
-    inline void __acquire_slow(std::memory_order order) noexcept {
-        if (__frontbuffer.fetch_sub(2, order) >> 1 > 0)
-            return;
-        count_type const result = details::__semaphore_sem_wait(__semaphore);
-#ifdef WIN32
-        if (!result)
-        {   
-            auto d = GetLastError();
-            assert(d == ERROR_SUCCESS);
-        }
-#endif  
-        assert(result);
-        __backfill();
-    }
-
-    inline void __backfill()
-    {
-#ifdef __semaphore_back_buffered
-        if (__semaphore_expect(__backbuffer.load(std::memory_order_relaxed) == 0, 1))
-            return;
-        if (__semaphore_expect(__backbuffer.fetch_sub(1, std::memory_order_relaxed) == 0, 0))
-        {
-            __backbuffer.fetch_add(1, std::memory_order_relaxed); // put back
-            return;
-        }
-        auto const result = details::__semaphore_sem_post(__semaphore, 1);
-        assert(result);
-#endif
-    }
-
-    details::__semaphore_sem_t __semaphore;
-    atomic<count_type> __frontbuffer;
-#ifdef __semaphore_back_buffered
-    atomic<count_type> __backbuffer;
-#endif
-
-    friend struct synchronic;
-};
-
-#endif
-
+  __semaphore_abi void __notify();
+  template <class A, class Predicate>
+    __semaphore_abi void __wait(A& object, Predicate pred, std::memory_order order);
+  template <class A, class Predicate, class Clock, class Duration>
+    __semaphore_abi bool __wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order);
+  template <class A, class Predicate, class Rep, class Period>
+    __semaphore_abi bool __wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order);
 #ifndef __semaphore_cuda
-#define __semaphore_abi_a __semaphore_abi
-#else
-#define __semaphore_abi_a __semaphore_abi static
-#endif
+  counting_semaphore                     __sem;
+  atomic<counting_semaphore::count_type> __reversebuffer{ 0 };
 
-struct synchronic {
-
-    template <class T>
-    __semaphore_abi_a void signal(const atomic<T>* a, semaphore_notify notify = semaphore_notify_all) noexcept
-    {
-#ifndef __semaphore_cuda
-        if (__semaphore_expect(!__reversebuffer.load(std::memory_order_relaxed), 1))
-            return;
-        (atomic_thread_fence)(std::memory_order_seq_cst);
-        int const waiting = __reversebuffer.exchange(0, std::memory_order_relaxed);
-        if (__semaphore_expect(waiting, 0))
-            __sem.release(waiting, notify, std::memory_order_release);
-#endif
-    }
-
-    template <class T, class V>
-    __semaphore_abi_a void wait_cas(atomic<T>* a, V oldval, V newval, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        for (int i = 0; i < 16; ++i, details::__semaphore_yield()) {
-            auto old = oldval;
-            if (__semaphore_expect(a->compare_exchange_weak(old, newval, order), 1))
-                return;
-        }
-        details::__semaphore_exponential_backoff b;
-        while (1)
-        {
-            b.sleep();
-            auto old = oldval;
-            if (__semaphore_expect(a->compare_exchange_weak(old, newval, order), 1))
-                return;
-        }
-    }
-
-    template <class T, class V>
-    __semaphore_abi_a void wait(atomic<T> const *a, V oldval, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-        for (int i = 0; i < 16; ++i, details::__semaphore_yield())
-            if (__semaphore_expect(a->load(order) != oldval, 1))
-                return;
-        details::__semaphore_exponential_backoff b;
-        do
-        {
-#ifndef __semaphore_cuda
-            __reversebuffer.fetch_add(1, std::memory_order_relaxed);
-            (atomic_thread_fence)(std::memory_order_seq_cst);
-            if (__semaphore_expect(a->load(order) != oldval, 0))
-            {
-                auto const waiting = __reversebuffer.exchange(0, std::memory_order_relaxed);
-                switch (waiting)
-                {
-                case 0:
-                    __sem.acquire(std::memory_order_relaxed); // uuuuuuuuhhhh, this is really weird for for/until
-                case 1:
-                    break;
-                default:
-                    __sem.release(waiting - 1, semaphore_notify_all, std::memory_order_relaxed); break;
-                }
-                break;
-            }
-            __sem.__acquire_slow(std::memory_order_relaxed);
-#else
-            b.sleep();
-#endif
-        } while (a->load(order) == oldval);
-    }
-
-    template <class T, class V>
-    __semaphore_abi_a bool try_wait(atomic<T> const *a, V oldval, std::memory_order order = std::memory_order_seq_cst) noexcept
-    {
-
-        for (int i = 0; i < 128; ++i, details::__semaphore_yield())
-            if (__semaphore_expect(a->load(order) != oldval, 1))
-                return true;
-        return false;
-    }
-
-    __semaphore_abi inline synchronic(counting_semaphore::count_type desired) noexcept
-#ifndef __semaphore_cuda
-        : __sem(desired), __reversebuffer{0}
-#endif
-    {
-    }
-    synchronic(const synchronic &) = delete;
-    synchronic &operator=(const synchronic &) = delete;
-
-#ifndef __semaphore_cuda
-    counting_semaphore                     __sem;
-    atomic<counting_semaphore::count_type> __reversebuffer{ 0 };
+  static __semaphore_abi condition_variable_atomic *__from_ptr(void const *ptr);
+  static __semaphore_abi condition_variable_atomic *__from_ptr(void const volatile *ptr);
 #endif
 };
 
-#ifndef __semaphore_cuda
-extern __semaphore_abi synchronic *__atomic_wait_get_semaphore(void const *ptr);
-#endif
+#include "details/binary_semaphore.hpp"
+#include "details/counting_semaphore.hpp"
+#include "details/condition_variable_atomic.hpp"
+#include "details/waitnotify.hpp"
 
-template <class T>
-__semaphore_abi void atomic_signal_explicit(const atomic<T>*a, semaphore_notify notify)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    signal(a, notify);
-}
-template <class T>
-__semaphore_abi void atomic_signal(const atomic<T>* a)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    signal(a);
-}
-template <class T, class V>
-__semaphore_abi void atomic_wait_cas_explicit(atomic<T>* a, V oldval, V newval, std::memory_order order)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    wait_cas(a, oldval, newval, order);
-}
-template <class T, class V>
-__semaphore_abi void atomic_wait_cas(atomic<T>* a, V oldval, V newval)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    wait_cas(a, oldval, newval);
-}
-template <class T, class V>
-__semaphore_abi void atomic_wait_explicit(const atomic<T>* a, V oldval, std::memory_order order)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    wait(a, oldval, order);
-}
-template <class T, class V>
-__semaphore_abi void atomic_wait(const atomic<T>* a, V oldval)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    wait(a, oldval);
-}
-template <class T, class V>
-__semaphore_abi void atomic_try_wait_explicit(const atomic<T>* a, V oldval, std::memory_order order)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    try_wait(a, oldval, order);
-}
-template <class T, class V>
-__semaphore_abi void atomic_try_wait(const atomic<T>* a, V oldval)
-{
-#ifndef __semaphore_cuda
-    __atomic_wait_get_semaphore(a)->
-#else
-    synchronic::
-#endif
-    try_wait(a, oldval);
-}
-
-}
+} //v1
 } // namespace experimental
-}
+} //__semaphore_ns
 
 #endif //__semaphore__

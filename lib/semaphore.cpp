@@ -25,23 +25,14 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISE
 OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
-#ifdef __semaphore_cuda
-namespace cuda
-{
-#else
-#include "semaphore"
-namespace std
-{
-#endif //__semaphore_cuda
 
-namespace experimental
-{
-inline namespace v1 {
-namespace details
-{
-#ifdef __semaphore_cuda
+#ifndef __semaphore_cuda
 
-#else
+#include "details/config.hpp"
+
+namespace {
+
+#ifdef __semaphore_fast_path
 
 #ifdef __linux__
 // On Linux, we make use of the kernel memory wait operations. These have been available for a long time.
@@ -123,7 +114,7 @@ inline void __semaphore_wake_all(volatile A &a)
 }
 #endif // __linux__
 
-#if defined(WIN32) && _WIN32_WINNT >= 0x0602
+#if defined(WIN32)
 // On Windows, we make use of the kernel memory wait operations as well. These first became available with Windows 8.
 template <class A, class V>
 void __semaphore_wait(A &a, V v)
@@ -132,10 +123,10 @@ void __semaphore_wait(A &a, V v)
     WaitOnAddress((PVOID)&a, (PVOID)&v, sizeof(v), -1);
 }
 template <class A, class V, class Rep, class Period>
-void __semaphore_wait_timed(A &a, V v, chrono::duration<Rep, Period> const &delta)
+void __semaphore_wait_timed(A &a, V v, std::chrono::duration<Rep, Period> const &delta)
 {
     static_assert(sizeof(V) <= 8, "Windows only allows sizes between 1B and 8B for WaitOnAddress.");
-    WaitOnAddress((PVOID)&a, (PVOID)&v, sizeof(v), (DWORD)chrono::duration_cast<chrono::milliseconds>(delta).count());
+    WaitOnAddress((PVOID)&a, (PVOID)&v, sizeof(v), (DWORD)std::chrono::duration_cast<std::chrono::milliseconds>(delta).count());
 }
 template <class A>
 inline void __semaphore_wake_one(A &a)
@@ -147,9 +138,24 @@ inline void __semaphore_wake_all(A &a)
 {
     WakeByAddressAll((PVOID)&a);
 }
-#endif // defined(WIN32) && _WIN32_WINNT >= 0x0602
+#endif // defined(WIN32)
+
+#endif //__semaphore_fast_path
+
+} //anonymous
 
 #endif // __semaphore_cuda
+
+#include "semaphore"
+
+namespace __semaphore_ns
+{
+namespace experimental
+{
+inline namespace v1 
+{
+namespace details
+{
 
 template<class Fn>
 __semaphore_abi bool __binary_semaphore_acquire_slow(
@@ -163,15 +169,15 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
     uint32_t sum = 0u;
     while(1) {
         if(sum < 64*1024) {
-#else
+#else //__semaphore_fast_path
     while(1) {
-#endif
+#endif //__semaphore_fast_path
             uint32_t const delta = (tick - tock) * 128;
 #if !defined(__CUDA_ARCH__)
             std::this_thread::sleep_for(std::chrono::nanoseconds(delta));
 #elif defined(__has_cuda_nanosleep)
             details::__mme_nanosleep(delta);
-#endif
+#endif //__CUDA_ARCH__
 #ifdef __semaphore_fast_path
             sum += delta;
         }
@@ -185,11 +191,11 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
             }
         }
         uint32_t old = atom.load(std::memory_order_relaxed);
-#else
+#else //__semaphore_fast_path
         uint32_t old = atom.load(std::memory_order_relaxed);
         if(!fn(old))
             return false;
-#endif
+#endif //__semaphore_fast_path
         tock = tocket.load(std::memory_order_relaxed);
         if(tock != tick)
             continue;
@@ -204,7 +210,7 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
     }
 }
 
-}
+} //details
 
 #ifdef __semaphore_fast_path
 __semaphore_abi void binary_semaphore::__release_slow(count_type old) noexcept
@@ -217,18 +223,18 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old) noexcept
     if (lock != 0)
     {
         atomic_thread_fence(std::memory_order_seq_cst);
-        details::__semaphore_wake_all(__atom);
+        __semaphore_wake_all(__atom);
         __atom.fetch_and(~__lockbit, std::memory_order_release);
     }
 }
-#endif
+#endif //__semaphore_fast_path
 
 __semaphore_abi void binary_semaphore::__acquire_slow() noexcept
 {
     auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
 #ifdef __semaphore_fast_path
-        details::__semaphore_wait(__atom, old); 
-#endif
+        __semaphore_wait(__atom, old); 
+#endif //__semaphore_fast_path
         return true;
     };
     details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
@@ -242,24 +248,23 @@ __semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::time_po
 #ifdef __semaphore_fast_path
         auto rel_time = abs_time - details::__semaphore_clock::now();
         if(rel_time > std::chrono::microseconds(0))
-            details::__semaphore_wait_timed(__atom, old, rel_time); 
-#endif
+            __semaphore_wait_timed(__atom, old, rel_time); 
+#endif //__semaphore_fast_path
         return details::__semaphore_clock::now() < abs_time;
     };
     return details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
 
-#endif
+#endif //__semaphore_cuda
 
 #ifndef __semaphore_sem
 
-__semaphore_abi bool counting_semaphore::__fetch_sub_if_slow(counting_semaphore::count_type old, std::memory_order order) noexcept
+__semaphore_abi bool counting_semaphore::__fetch_sub_if_slow(counting_semaphore::count_type old)
 {
-
     do
     {
         old &= ~__lockmask;
-        if (atom.compare_exchange_weak(old, old - (1 << __shift), order, std::memory_order_relaxed))
+        if (atom.compare_exchange_weak(old, old - (1 << __shift), std::memory_order_acquire, std::memory_order_relaxed))
             return true;
     } while ((old >> __shift) >= 1);
 
@@ -271,7 +276,6 @@ void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, c
 {
     while (1)
     {
-
         bool const apply_lock = ((old & __contmask) != 0) && (notify != semaphore_notify::none);
         int const set = ((old & __valumask) + (term << __shift)) | (apply_lock ? __lockmask : 0);
 
@@ -297,9 +301,14 @@ void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, c
         }
     }
 }
-#endif
+#endif //__semaphore_fast_path
 
-__semaphore_abi void counting_semaphore::__acquire_slow(std::memory_order order) noexcept
+__semaphore_abi bool counting_semaphore::__acquire_slow_timed(std::chrono::time_point<details::__semaphore_clock, details::__semaphore_duration> const &abs_time)
+{
+    assert(0);
+}
+
+__semaphore_abi void counting_semaphore::__acquire_slow()
 {
 
     int old;
@@ -307,12 +316,12 @@ __semaphore_abi void counting_semaphore::__acquire_slow(std::memory_order order)
 #ifdef __semaphore_fast_path
     for (int i = 0; i < 2; ++i)
     {
-#else
+#else //__semaphore_fast_path
     while (1)
     {
-#endif
+#endif //__semaphore_fast_path
         b.sleep();
-        old = atom.load(order);
+        old = atom.load(std::memory_order_acquire);
         if ((old >> __shift) >= 1)
             goto done;
     }
@@ -323,40 +332,48 @@ __semaphore_abi void counting_semaphore::__acquire_slow(std::memory_order order)
         if ((old >> __shift) >= 1)
             goto done;
         details::__semaphore_wait(atom, old);
-        old = atom.load(order);
+        old = atom.load(std::memory_order_acquire);
         if ((old >> __shift) >= 1)
             goto done;
     }
-#endif
+#endif //__semaphore_fast_path
 done:
 #ifdef __semaphore_fast_path
     while (old & __lockmask)
         old = atom.load(std::memory_order_relaxed);
-#else
+#else //__semaphore_fast_path
     ;
-#endif
+#endif //__semaphore_fast_path
 }
-#endif
+#endif //__semaphore_sem
 
 #ifndef __semaphore_cuda
 
-static constexpr int __atomic_wait_table_entry_size = sizeof(synchronic) > alignof(synchronic) ? sizeof(synchronic) : alignof(synchronic);
-
 static constexpr int __atomic_wait_table_entry_count = 1024;
 
-__semaphore_managed alignas(64) unsigned char __atomic_wait_table[__atomic_wait_table_entry_count][__atomic_wait_table_entry_size] = { 0 };
+__semaphore_managed condition_variable_atomic __atomic_wait_table[__atomic_wait_table_entry_count];
 
-__semaphore_abi size_t __atomic_wait_table_index(void const* ptr) {
-
-    return ((uintptr_t)ptr / __atomic_wait_table_entry_size) & (__atomic_wait_table_entry_count - 1);
+__semaphore_abi size_t __atomic_wait_table_index(void const* ptr) 
+{
+    return ((uintptr_t)ptr >> 6) & (__atomic_wait_table_entry_count - 1);
 }
 
-__semaphore_abi synchronic *__atomic_wait_get_semaphore(void const *a)
+__semaphore_abi size_t __atomic_wait_table_index(void const volatile* ptr) 
 {
-    return (synchronic *)&__atomic_wait_table[__atomic_wait_table_index(a)][0];
+    return ((uintptr_t)ptr >> 6) & (__atomic_wait_table_entry_count - 1);
+}
+
+__semaphore_abi condition_variable_atomic *condition_variable_atomic::__from_ptr(void const *a)
+{
+    return __atomic_wait_table + __atomic_wait_table_index(a);
+}
+
+__semaphore_abi condition_variable_atomic *condition_variable_atomic::__from_ptr(void const volatile *a)
+{
+    return __atomic_wait_table + __atomic_wait_table_index(a);
 }
 
 #endif
-}
-} // namespace experimental
-} // namespace std
+} // v1
+} // experimental
+} // __semaphore_ns

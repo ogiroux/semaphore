@@ -1,0 +1,82 @@
+
+// 32.10, waiting and notifying functions
+
+template <class T>
+__semaphore_abi void atomic_notify_one(const volatile atomic<T>*a)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    notify_one(*a);
+}
+
+template <class T>
+__semaphore_abi void atomic_notify_one(const atomic<T>*a)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    notify_one(*a);
+}
+
+template <class T>
+__semaphore_abi void atomic_notify_all(const volatile atomic<T>* a)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    notify_all(*a);
+}
+
+template <class T>
+__semaphore_abi void atomic_notify_all(const atomic<T>* a)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    notify_all(*a);
+}
+
+template <class T, class V>
+__semaphore_abi void atomic_wait_explicit(const volatile atomic<T>* a, V oldval, std::memory_order order)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    wait(*a, oldval, order);
+}
+
+template <class T, class V>
+__semaphore_abi void atomic_wait_explicit(const atomic<T>* a, V oldval, std::memory_order order)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    wait(*a, oldval, order);
+}
+
+template <class T, class V>
+__semaphore_abi void atomic_wait(const volatile atomic<T>* a, V oldval)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    wait(*a, oldval);
+}
+
+template <class T, class V>
+__semaphore_abi void atomic_wait(const atomic<T>* a, V oldval)
+{
+    condition_variable_atomic::
+#ifndef __semaphore_cuda
+    __from_ptr(a)->
+#endif
+    wait(*a, oldval);
+}

@@ -52,6 +52,78 @@ int main(int argc, char const* argv[]) {
     }
   }
 
+  atomic<int> a = ATOMIC_VAR_INIT(1);
+  volatile atomic<int> va = ATOMIC_VAR_INIT(1);
+
+  atomic_notify_one(&va);
+  atomic_notify_one(&a);
+  atomic_notify_all(&va);
+  atomic_notify_all(&a);
+
+  atomic_wait(&va, 0);
+  atomic_wait_explicit(&va, 0, std::memory_order_acquire);
+  atomic_wait(&a, 0);
+  atomic_wait_explicit(&a, 0, std::memory_order_acquire);
+
+  condition_variable_atomic c;
+  
+  c.notify_one(va);
+  c.notify_one(a);
+  c.notify_all(va);
+  c.notify_all(a);
+
+  c.wait(va, 0);
+  c.wait(a, 0);
+  c.wait(va, 0, std::memory_order_acquire);
+  c.wait(a, 0, std::memory_order_acquire);
+
+  c.wait_until(va, 0, std::chrono::high_resolution_clock::now());
+  c.wait_until(a, 0, std::chrono::high_resolution_clock::now());
+  c.wait_until(va, 0, std::chrono::high_resolution_clock::now(), std::memory_order_acquire);
+  c.wait_until(a, 0, std::chrono::high_resolution_clock::now(), std::memory_order_acquire);
+
+  c.wait_for(va, 0, std::chrono::nanoseconds(1));
+  c.wait_for(a, 0, std::chrono::nanoseconds(1));
+  c.wait_for(va, 0, std::chrono::nanoseconds(1), std::memory_order_acquire);
+  c.wait_for(a, 0, std::chrono::nanoseconds(1), std::memory_order_acquire);
+
+  auto l = [](int v) -> bool { return v == 1; };
+
+  c.wait(va, l);
+  c.wait(a, l);
+  c.wait(va, l, std::memory_order_acquire);
+  c.wait(a, l, std::memory_order_acquire);
+
+  c.wait_until(va, l, std::chrono::high_resolution_clock::now());
+  c.wait_until(a, l, std::chrono::high_resolution_clock::now());
+  c.wait_until(va, l, std::chrono::high_resolution_clock::now(), std::memory_order_acquire);
+  c.wait_until(a, l, std::chrono::high_resolution_clock::now(), std::memory_order_acquire);
+
+  c.wait_for(va, l, std::chrono::nanoseconds(1));
+  c.wait_for(a, l, std::chrono::nanoseconds(1));
+  c.wait_for(va, l, std::chrono::nanoseconds(1), std::memory_order_acquire);
+  c.wait_for(a, l, std::chrono::nanoseconds(1), std::memory_order_acquire);
+
+  binary_semaphore b(1);
+
+  b.acquire();
+  b.release();
+  b.try_acquire();
+  b.release();
+  b.try_acquire_until(std::chrono::high_resolution_clock::now());
+  b.release();
+  b.try_acquire_for(std::chrono::nanoseconds(1));
+  b.release();
+  
+  counting_semaphore cs(4);
+  
+  cs.acquire();
+  cs.try_acquire();
+  cs.try_acquire_until(std::chrono::high_resolution_clock::now());
+  cs.try_acquire_for(std::chrono::nanoseconds(1));
+  cs.release(3);
+  cs.release();
+
   print_headers();
 
   run_calibration();

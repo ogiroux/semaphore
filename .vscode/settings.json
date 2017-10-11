@@ -46,6 +46,9 @@
         "tuple": "cpp",
         "type_traits": "cpp",
         "utility": "cpp",
-        "__mutex_base": "cpp"
+        "__mutex_base": "cpp",
+        "__nullptr": "cpp",
+        "ios": "cpp",
+        "climits": "cpp"
     }
 }
