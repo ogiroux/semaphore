@@ -244,9 +244,9 @@ public:
 #ifndef __semaphore_cuda
   counting_semaphore                     __sem;
   atomic<counting_semaphore::count_type> __reversebuffer{ 0 };
-#endif
   static __semaphore_abi condition_variable_atomic *__from_ptr(void const *ptr);
   static __semaphore_abi condition_variable_atomic *__from_ptr(void const volatile *ptr);
+  #endif
 };
 
 #include "details/binary_semaphore.hpp"
