@@ -240,22 +240,22 @@ __semaphore_abi void binary_semaphore::__acquire_slow()
     details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
 
-#ifndef __semaphore_cuda
-
-__semaphore_abi bool binary_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) 
+bool binary_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) 
 {
-    auto const fn = [=](uint32_t old) __semaphore_abi -> bool { 
+    auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
+#ifndef __CUDA_ARCH__
         auto const abs_time = details::__semaphore_clock::now() + rel_time;
 #ifdef __semaphore_fast_path
         if(rel_time > std::chrono::microseconds(0))
             __semaphore_wait_timed(__atom, old, rel_time); 
 #endif //__semaphore_fast_path
         return details::__semaphore_clock::now() < abs_time;
+#else
+        return false;
+#endif
     };
     return details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
-
-#endif //__semaphore_cuda
 
 #ifndef __semaphore_sem
 
