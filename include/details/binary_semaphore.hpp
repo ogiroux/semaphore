@@ -40,7 +40,7 @@ __semaphore_abi inline void binary_semaphore::acquire()
 }
 
 template <class Clock, class Duration>
-__semaphore_abi bool binary_semaphore::try_acquire_until(const std::chrono::time_point<Clock, Duration>& abs_time)
+bool binary_semaphore::try_acquire_until(const std::chrono::time_point<Clock, Duration>& abs_time)
 {
     if (__semaphore_expect(try_acquire(), 1))
         return true;
@@ -48,7 +48,7 @@ __semaphore_abi bool binary_semaphore::try_acquire_until(const std::chrono::time
 }
 
 template <class Rep, class Period>
-__semaphore_abi bool binary_semaphore::try_acquire_for(const std::chrono::duration<Rep, Period>& rel_time)
+bool binary_semaphore::try_acquire_for(const std::chrono::duration<Rep, Period>& rel_time)
 {
     if (__semaphore_expect(try_acquire(), 1))
         return true;

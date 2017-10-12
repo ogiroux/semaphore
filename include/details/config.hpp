@@ -80,7 +80,7 @@ __semaphore_abi inline void __semaphore_yield()
 #if !defined(__CUDA_ARCH__)
     std::this_thread::yield();
 #elif defined(__has_cuda_nanosleep)
-    __mme_nanosleep(1);
+    cuda::experimental::details::__mme_nanosleep(1);
 #endif
 }
 #define __semaphore_expect(c, e) (c)

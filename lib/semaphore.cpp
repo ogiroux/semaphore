@@ -303,9 +303,10 @@ void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, c
 }
 #endif //__semaphore_fast_path
 
-__semaphore_abi bool counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const&) 
+bool counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const&) 
 {
-    assert(0);
+  assert(0);
+  return false;
 }
 
 __semaphore_abi void counting_semaphore::__acquire_slow()

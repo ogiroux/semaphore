@@ -79,9 +79,9 @@ public:
   __semaphore_abi void acquire();
   __semaphore_abi bool try_acquire();
   template <class Clock, class Duration>
-    __semaphore_abi bool try_acquire_until(std::chrono::time_point<Clock, Duration> const&);
+    bool try_acquire_until(std::chrono::time_point<Clock, Duration> const&);
   template <class Rep, class Period>
-    __semaphore_abi bool try_acquire_for(std::chrono::duration<Rep, Period> const&);
+    bool try_acquire_for(std::chrono::duration<Rep, Period> const&);
 
   // implementation-defined
 
@@ -96,7 +96,7 @@ public:
 
     __semaphore_abi void __acquire_slow();
 
-    __semaphore_abi bool __acquire_slow_timed(std::chrono::nanoseconds const&);
+    bool __acquire_slow_timed(std::chrono::nanoseconds const&);
 
   atomic<count_type> __atom;
   atomic<count_type> __ticket;
@@ -136,9 +136,9 @@ public:
   __semaphore_abi void acquire();
   __semaphore_abi bool try_acquire();
   template <class Clock, class Duration>
-    __semaphore_abi bool try_acquire_until(std::chrono::time_point<Clock, Duration> const&);
+    bool try_acquire_until(std::chrono::time_point<Clock, Duration> const&);
   template <class Rep, class Period>
-    __semaphore_abi bool try_acquire_for(std::chrono::duration<Rep, Period> const&);
+    bool try_acquire_for(std::chrono::duration<Rep, Period> const&);
 
   // implementation-defined
 
@@ -150,14 +150,14 @@ public:
 #endif //__semaphore_fast_path
 
   __semaphore_abi void __acquire_slow();
-  __semaphore_abi bool __acquire_slow_timed(std::chrono::nanoseconds const&);
+  bool __acquire_slow_timed(std::chrono::nanoseconds const&);
   __semaphore_abi inline bool __acquire_fast();
 
   atomic<count_type> atom;
 #else //__semaphore_sem
   __semaphore_abi inline void __acquire_fast();
   __semaphore_abi inline void __acquire_slow();
-  __semaphore_abi inline void __acquire_slow_timed(std::chrono::nanoseconds const&);
+  inline void __acquire_slow_timed(std::chrono::nanoseconds const&);
   __semaphore_abi inline void __backfill();
 
   __semaphore_sem_t __semaphore;
@@ -200,37 +200,37 @@ public:
     __semaphore_abi void wait(const atomic<T>&, Predicate pred, 
                               std::memory_order = std::memory_order_seq_cst);
   template <class T, class Clock, class Duration>
-    __semaphore_abi bool wait_until(const volatile atomic<T>&, T, 
-                                    std::chrono::time_point<Clock, Duration> const&, 
-                                    std::memory_order = std::memory_order_seq_cst);
+    bool wait_until(const volatile atomic<T>&, T, 
+                    std::chrono::time_point<Clock, Duration> const&, 
+                    std::memory_order = std::memory_order_seq_cst);
   template <class T, class Clock, class Duration>
-    __semaphore_abi bool wait_until(const atomic<T>&, T, 
-                                    std::chrono::time_point<Clock, Duration> const&, 
-                                    std::memory_order = std::memory_order_seq_cst);
+    bool wait_until(const atomic<T>&, T, 
+                    std::chrono::time_point<Clock, Duration> const&, 
+                    std::memory_order = std::memory_order_seq_cst);
   template <class T, class Predicate, class Clock, class Duration>
-    __semaphore_abi bool wait_until(const volatile atomic<T>&, Predicate pred,
-                                    std::chrono::time_point<Clock, Duration> const&, 
-                                    std::memory_order = std::memory_order_seq_cst);
+    bool wait_until(const volatile atomic<T>&, Predicate pred,
+                    std::chrono::time_point<Clock, Duration> const&, 
+                    std::memory_order = std::memory_order_seq_cst);
   template <class T, class Predicate, class Clock, class Duration>
-    __semaphore_abi bool wait_until(const atomic<T>&, Predicate pred,
-                                    std::chrono::time_point<Clock, Duration> const&, 
-                                    std::memory_order = std::memory_order_seq_cst);
+    bool wait_until(const atomic<T>&, Predicate pred,
+                    std::chrono::time_point<Clock, Duration> const&, 
+                    std::memory_order = std::memory_order_seq_cst);
   template <class T, class Rep, class Period>
-    __semaphore_abi bool wait_for(const volatile atomic<T>&, T, 
-                                  std::chrono::duration<Rep, Period> const&, 
-                                  std::memory_order = std::memory_order_seq_cst);
+    bool wait_for(const volatile atomic<T>&, T, 
+                  std::chrono::duration<Rep, Period> const&, 
+                  std::memory_order = std::memory_order_seq_cst);
   template <class T, class Rep, class Period>
-    __semaphore_abi bool wait_for(const atomic<T>&, T, 
-                                  std::chrono::duration<Rep, Period> const&, 
-                                  std::memory_order = std::memory_order_seq_cst);
+    bool wait_for(const atomic<T>&, T, 
+                  std::chrono::duration<Rep, Period> const&, 
+                  std::memory_order = std::memory_order_seq_cst);
   template <class T, class Predicate, class Rep, class Period>
-    __semaphore_abi bool wait_for(const volatile atomic<T>&, Predicate pred,
-                                  std::chrono::duration<Rep, Period> const&, 
-                                  std::memory_order = std::memory_order_seq_cst);
+    bool wait_for(const volatile atomic<T>&, Predicate pred,
+                  std::chrono::duration<Rep, Period> const&, 
+                  std::memory_order = std::memory_order_seq_cst);
   template <class T, class Predicate, class Rep, class Period>
-    __semaphore_abi bool wait_for(const atomic<T>&, Predicate pred,
-                                  std::chrono::duration<Rep, Period> const&, 
-                                  std::memory_order = std::memory_order_seq_cst);
+    bool wait_for(const atomic<T>&, Predicate pred,
+                  std::chrono::duration<Rep, Period> const&, 
+                  std::memory_order = std::memory_order_seq_cst);
 
   // implementation-defined
 
@@ -238,16 +238,15 @@ public:
   template <class A, class Predicate>
     __semaphore_abi void __wait(A& object, Predicate pred, std::memory_order order);
   template <class A, class Predicate, class Clock, class Duration>
-    __semaphore_abi bool __wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order);
+    bool __wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order);
   template <class A, class Predicate, class Rep, class Period>
-    __semaphore_abi bool __wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order);
+    bool __wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order);
 #ifndef __semaphore_cuda
   counting_semaphore                     __sem;
   atomic<counting_semaphore::count_type> __reversebuffer{ 0 };
-
+#endif
   static __semaphore_abi condition_variable_atomic *__from_ptr(void const *ptr);
   static __semaphore_abi condition_variable_atomic *__from_ptr(void const volatile *ptr);
-#endif
 };
 
 #include "details/binary_semaphore.hpp"

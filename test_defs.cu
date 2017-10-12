@@ -45,6 +45,7 @@ using atomic = cuda::experimental::atomic<T>;
 using thread = std::thread;
 using binary_semaphore = cuda::experimental::binary_semaphore;
 using counting_semaphore = cuda::experimental::counting_semaphore;
+using condition_variable_atomic = cuda::experimental::condition_variable_atomic;
 namespace details = cuda::experimental::details;
 
 #include "test.hpp"

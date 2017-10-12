@@ -53,7 +53,29 @@ int main(int argc, char const* argv[]) {
   }
 
   atomic<int> a = ATOMIC_VAR_INIT(1);
+
+  a.load();
+  a.store(1);
+  a.exchange(1);
+  a.fetch_add(0);
+  a.fetch_or(0);
+  a.fetch_and(1);
+  a.fetch_xor(0);
+  int old = 1;
+  a.compare_exchange_strong(old, 1);
+  a.compare_exchange_weak(old,1);
+
   volatile atomic<int> va = ATOMIC_VAR_INIT(1);
+
+  va.load();
+  va.store(1);
+  va.exchange(1);
+  va.fetch_add(0);
+  va.fetch_or(0);
+  va.fetch_and(1);
+  va.fetch_xor(0);
+  va.compare_exchange_strong(old, 1);
+  va.compare_exchange_weak(old,1);
 
   atomic_notify_one(&va);
   atomic_notify_one(&a);
@@ -87,7 +109,7 @@ int main(int argc, char const* argv[]) {
   c.wait_for(va, 0, std::chrono::nanoseconds(1), std::memory_order_acquire);
   c.wait_for(a, 0, std::chrono::nanoseconds(1), std::memory_order_acquire);
 
-  auto l = [](int v) -> bool { return v == 1; };
+  auto l = [] __test_abi (int v) -> bool { return v == 1; };
 
   c.wait(va, l);
   c.wait(a, l);

@@ -114,7 +114,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 int32_t const temp = desired;
                 __mme_store_relaxed_8_as_32(&ref, temp);
             }
-#ifdef __has_cuda_mmio
             template<class T> __device__ static inline void load_mmio(T const volatile& ref, T& ret) noexcept {
                 int32_t temp = 0;
                 __mme_load_relaxed_mmio_8_as_32(&ref, temp);
@@ -124,7 +123,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 int32_t const temp = desired;
                 __mme_store_relaxed_mmio_8_as_32(&ref, temp);
             }
-#endif
         };
 
         template<>
@@ -143,14 +141,12 @@ namespace cuda { namespace experimental { inline namespace v1 {
             template<class T> __device__ static inline void store_relaxed(T& ptr, T desired) noexcept {
                 __mme_store_relaxed_16(&ptr,desired);
             }
-#ifdef __has_cuda_mmio
             template<class T> __device__ static inline void load_mmio(T const volatile& ptr, T& ret) noexcept {
                 __mme_load_relaxed_mmio_16(&ptr,ret);
             }
             template<class T> __device__ static inline void store_mmio(T volatile& ptr, T desired) noexcept {
                 __mme_store_relaxed_mmio_16(&ptr,desired);
             }
-#endif
         };
 
         template<>
@@ -248,7 +244,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 __mme_xor_relaxed_32(&ptr,old,xorend);
             }
 
-#ifdef __has_cuda_mmio
             template<class T> __device__ static inline void load_mmio(T const volatile& ptr, T& ret) noexcept {
                 __mme_load_relaxed_mmio_32(&ptr, ret);
             }
@@ -273,7 +268,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
             template<class T> __device__ static inline void xor_mmio(T volatile& ptr, T& old, T xorend) noexcept {
                 __mme_xor_release_32(&ptr,old,xorend);
             }
-#endif
         };
 
         template<>
@@ -370,7 +364,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
             template<class T> __device__ static inline void xor_relaxed(T& ptr, T& old, T xorend) noexcept {
                 __mme_xor_relaxed_64(&ptr,old,xorend);
             }
-#ifdef __has_cuda_mmio
             template<class T> __device__ static inline void load_mmio(T const volatile& ptr, T& ret) noexcept {
                 __mme_load_relaxed_mmio_64(&ptr, ret);
             }
@@ -395,7 +388,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
             template<class T> __device__ static inline void xor_mmio(T volatile& ptr, T& old, T xorend) noexcept {
                 __mme_xor_release_64(&ptr,old,xorend);
             }
-#endif
         };
 
         template<class T>
@@ -509,7 +501,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 return ret;
             }
 
-#ifdef __has_cuda_mmio
             __device__ static inline T load(T const volatile& value, std::memory_order order) noexcept {
                 T ret;
                 switch (order) {
@@ -678,7 +669,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 }
                 return ret;
             }
-#endif
         };
         
         template<class T>
@@ -812,7 +802,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 return __mme_std<T>::fetch_xor(value, xorend, order);
             }
 
-#ifdef __has_cuda_mmio
             __device__ T load(std::memory_order order = std::memory_order_seq_cst) const volatile noexcept {
                 return __mme_std<T>::load(value, order);
             }
@@ -867,7 +856,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
             __device__ T fetch_xor(T xorend, std::memory_order order = std::memory_order_seq_cst) volatile noexcept {
                 return __mme_std<T>::fetch_xor(value, xorend, order);
             }
-#endif
         };
         
         __host__ __device__ extern void __lock_by_address(void const*);
@@ -954,7 +942,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 return ret;
             }
 
-#ifdef __has_cuda_mmio
             __host__ __device__ T load(std::memory_order order = std::memory_order_seq_cst) const volatile noexcept {
                 __lock_by_address(this);
                 auto const ret = __value;
@@ -1005,7 +992,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 __unlock_by_address(this);
                 return ret;
             }
-#endif
         };
 
         template<typename T> struct is_always_lock_free { enum { value = false }; };
@@ -1160,7 +1146,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
             return _base.fetch_xor(xorend);
         }
 
-#ifdef __has_cuda_mmio
         __host__ __device__ bool is_lock_free() const volatile noexcept { return is_always_lock_free; }
 
         __host__ __device__ void store(T desired, std::memory_order order = std::memory_order_seq_cst) volatile noexcept {
@@ -1250,7 +1235,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
         __host__ __device__ T operator^=(T xorend) volatile noexcept {
             return _base.fetch_xor(xorend);
         }
-#endif
     };
 
     // 32.7, non-member functions
@@ -1321,7 +1305,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
         return a->fetch_xor(xorend, order);
     }
 
-#ifdef __has_cuda_mmio
     template<class T> __host__ __device__ bool atomic_is_lock_free(const volatile atomic<T>* a) noexcept {
         return a->is_lock_free();
     }
@@ -1388,7 +1371,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
     template <class T> __host__ __device__ T atomic_fetch_xor_explicit(volatile atomic<T>* a, typename atomic<T>::value_type xorend, memory_order order) noexcept {
         return a->fetch_xor(xorend, order);
     }
-#endif
 
     // 32.6.1, initialization
     //#define ATOMIC_VAR_INIT(value) {value}
@@ -1455,7 +1437,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
         atomic_flag(const atomic_flag&) = delete; 
         atomic_flag& operator=(const atomic_flag&) = delete; 
 
-#ifdef __has_cuda_mmio
         __host__ __device__ bool test_and_set(memory_order order = std::memory_order_seq_cst) volatile noexcept {
             return _base.exchange(1, order) == 0;
         }
@@ -1463,7 +1444,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
             return _base.store(0, order);
         }
         atomic_flag& operator=(const atomic_flag&) volatile = delete;
-#endif
     };
     __host__ __device__ inline bool atomic_flag_test_and_set(atomic_flag* f) noexcept {
         return f->test_and_set();
@@ -1477,7 +1457,6 @@ namespace cuda { namespace experimental { inline namespace v1 {
     __host__ __device__ inline void atomic_flag_clear_explicit(atomic_flag* f, std::memory_order order) noexcept {
         f->clear(order);
     }
-#ifdef __has_cuda_mmio
     __host__ __device__ inline bool atomic_flag_test_and_set(volatile atomic_flag* f) noexcept {
         return f->test_and_set();
     }
@@ -1490,7 +1469,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
     __host__ __device__ inline void atomic_flag_clear_explicit(volatile atomic_flag* f, std::memory_order order) noexcept {
         f->clear(order);
     }
-#endif
+
     //Defined by host.
     //#define ATOMIC_FLAG_INIT {0}
 

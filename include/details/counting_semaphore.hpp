@@ -36,14 +36,14 @@ __semaphore_abi inline bool counting_semaphore::try_acquire()
 }
 
 template <class Clock, class Duration>
-__semaphore_abi bool counting_semaphore::try_acquire_until(std::chrono::time_point<Clock, Duration> const &abs_time)
+bool counting_semaphore::try_acquire_until(std::chrono::time_point<Clock, Duration> const &abs_time)
 {
 
     while (__semaphore_expect(!__fetch_sub_if(), 0))
     {
         bool success = __acquire_fast();
         if (__semaphore_expect(!success, 0))
-            success = __acquire_slow_timed(abs_time - details::__semaphore_clock::now());
+            success = __acquire_slow_timed(abs_time - Clock::now());
         if (__semaphore_expect(!success, 0))
             return false;
     }
@@ -51,7 +51,7 @@ __semaphore_abi bool counting_semaphore::try_acquire_until(std::chrono::time_poi
 }
 
 template <class Rep, class Period>
-__semaphore_abi bool counting_semaphore::try_acquire_for(std::chrono::duration<Rep, Period> const &rel_time)
+bool counting_semaphore::try_acquire_for(std::chrono::duration<Rep, Period> const &rel_time)
 {
 
     if (__semaphore_expect(__fetch_sub_if(), 1))
@@ -138,7 +138,7 @@ __semaphore_abi inline void counting_semaphore::acquire()
 }
 
 template <class Rep, class Period>
-__semaphore_abi bool counting_semaphore::try_acquire_for(std::chrono::duration<Rep, Period> const &rel_time)
+bool counting_semaphore::try_acquire_for(std::chrono::duration<Rep, Period> const &rel_time)
 {
     __acquire_fast();
     if (__frontbuffer.fetch_sub(2, std::memory_order_acquire) >> 1 > 0)
@@ -150,7 +150,7 @@ __semaphore_abi bool counting_semaphore::try_acquire_for(std::chrono::duration<R
 }
 
 template <class Clock, class Duration>
-__semaphore_abi bool counting_semaphore::try_acquire_until(std::chrono::time_point<Clock, Duration> const &abs_time)
+bool counting_semaphore::try_acquire_until(std::chrono::time_point<Clock, Duration> const &abs_time)
 {
 
     return try_acquire_for(abs_time - Clock::now());
@@ -217,7 +217,7 @@ __semaphore_abi inline void counting_semaphore::__acquire_slow() {
     __backfill();
 }
 
-__semaphore_abi void inline counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) {
+void inline counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) {
     assert(0);
 }
 

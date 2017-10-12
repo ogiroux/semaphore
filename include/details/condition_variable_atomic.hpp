@@ -47,7 +47,7 @@ __semaphore_abi void condition_variable_atomic::__wait(A& object, Predicate pred
 }
 
 template <class A, class Predicate, class Clock, class Duration>
-__semaphore_abi bool condition_variable_atomic::__wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
+bool condition_variable_atomic::__wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 {
     for (int i = 0; i < 16; ++i, __semaphore_yield())
         if (__semaphore_expect(pred(object.load(order)), 1))
@@ -84,7 +84,7 @@ __semaphore_abi bool condition_variable_atomic::__wait_until(A& object, Predicat
 }
 
 template <class A, class Predicate, class Rep, class Period>
-__semaphore_abi bool condition_variable_atomic::__wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
+bool condition_variable_atomic::__wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
 {
     return __wait_until(object, pred, details::__semaphore_clock::now() + rel_time, order);
 }
@@ -149,49 +149,49 @@ __semaphore_abi void condition_variable_atomic::wait(const atomic<T>& object, Pr
 }
 
 template <class T, class Clock, class Duration>
-__semaphore_abi bool condition_variable_atomic::wait_until(const volatile atomic<T>& object, T old, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
+bool condition_variable_atomic::wait_until(const volatile atomic<T>& object, T old, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 { 
     return __wait_until(object, [=] __semaphore_abi (T other) -> bool { return old != other; }, abs_time, order); 
 }
 
 template <class T, class Clock, class Duration>
-__semaphore_abi bool condition_variable_atomic::wait_until(const atomic<T>& object, T old, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
+bool condition_variable_atomic::wait_until(const atomic<T>& object, T old, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 { 
     return __wait_until(object, [=] __semaphore_abi (T other) -> bool { return old != other; }, abs_time, order); 
 }
 
 template <class T, class Predicate, class Clock, class Duration>
-__semaphore_abi bool condition_variable_atomic::wait_until(const volatile atomic<T>& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
+bool condition_variable_atomic::wait_until(const volatile atomic<T>& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 { 
     return __wait_until(object, pred, abs_time, order); 
 }
 
 template <class T, class Predicate, class Clock, class Duration>
-__semaphore_abi bool condition_variable_atomic::wait_until(const atomic<T>& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
+bool condition_variable_atomic::wait_until(const atomic<T>& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 { 
     return __wait_until(object, pred, abs_time, order); 
 }
 
 template <class T, class Rep, class Period>
-__semaphore_abi bool condition_variable_atomic::wait_for(const volatile atomic<T>& object, T old, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
+bool condition_variable_atomic::wait_for(const volatile atomic<T>& object, T old, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
 { 
     return __wait_for(object, [=] __semaphore_abi (T other) -> bool { return old != other; }, rel_time, order); 
 }
 
 template <class T, class Rep, class Period>
-__semaphore_abi bool condition_variable_atomic::wait_for(const atomic<T>& object, T old, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
+bool condition_variable_atomic::wait_for(const atomic<T>& object, T old, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
 { 
     return __wait_for(object, [=] __semaphore_abi (T other) -> bool { return old != other; }, rel_time, order); 
 }
 
 template <class T, class Predicate, class Rep, class Period>
-__semaphore_abi bool condition_variable_atomic::wait_for(const volatile atomic<T>& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
+bool condition_variable_atomic::wait_for(const volatile atomic<T>& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
 { 
     return __wait_for(object, pred, rel_time, order); 
 }
 
 template <class T, class Predicate, class Rep, class Period>
-__semaphore_abi bool condition_variable_atomic::wait_for(const atomic<T>& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
+bool condition_variable_atomic::wait_for(const atomic<T>& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
 { 
     return __wait_for(object, pred, rel_time, order); 
 }

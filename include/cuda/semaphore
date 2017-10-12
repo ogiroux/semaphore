@@ -35,10 +35,6 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #undef __semaphore__
 #endif
 
-#ifdef __abi
-#warning "this header redefines __abi"
-#endif
-
 #define __semaphore_cuda
 #include "../semaphore"
 #undef __semaphore_cuda
