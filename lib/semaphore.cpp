@@ -213,9 +213,9 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
 } //details
 
 #ifdef __semaphore_fast_path
-__semaphore_abi void __binary_semaphore_impl_base::__release_slow(count_type old)
+__semaphore_abi void __binary_semaphore_impl_base::__release_slow(__count_type old)
 {
-    count_type lock = 0;
+    __count_type lock = 0;
     do {
         old &= ~__lockbit;
         lock = (old & __slowbit) ? __lockbit : 0;
