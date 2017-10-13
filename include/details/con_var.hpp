@@ -26,7 +26,8 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-__semaphore_abi inline void condition_variable_atomic::__notify()
+template<class Semaphore>
+__semaphore_abi inline void __condition_variable_atomic_impl_base<Semaphore>::__notify()
 {
 #ifndef __semaphore_cuda
     if (__semaphore_expect(!__reversebuffer.load(std::memory_order_relaxed), 1))
@@ -38,8 +39,9 @@ __semaphore_abi inline void condition_variable_atomic::__notify()
 #endif
 }
 
-template <class A, class Predicate>
-__semaphore_abi void condition_variable_atomic::__wait(A& object, Predicate pred, std::memory_order order)
+template<class Semaphore>
+template<class A, class Predicate>
+__semaphore_abi void __condition_variable_atomic_impl_base<Semaphore>::__wait(A& object, Predicate pred, std::memory_order order)
 {
     for (int i = 0; i < 16; ++i, __semaphore_yield())
         if (__semaphore_expect(pred(object.load(order)), 1))
@@ -73,8 +75,9 @@ __semaphore_abi void condition_variable_atomic::__wait(A& object, Predicate pred
     }
 }
 
-template <class A, class Predicate, class Clock, class Duration>
-bool condition_variable_atomic::__wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
+template<class Semaphore>
+template<class A, class Predicate, class Clock, class Duration>
+bool __condition_variable_atomic_impl_base<Semaphore>::__wait_until(A& object, Predicate pred, std::chrono::time_point<Clock, Duration> const& abs_time, std::memory_order order)
 {
     for (int i = 0; i < 16; ++i, __semaphore_yield())
         if (__semaphore_expect(pred(object.load(order)), 1))
@@ -110,17 +113,24 @@ bool condition_variable_atomic::__wait_until(A& object, Predicate pred, std::chr
     }
 }
 
-template <class A, class Predicate, class Rep, class Period>
-bool condition_variable_atomic::__wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
+template<class Semaphore>
+template<class A, class Predicate, class Rep, class Period>
+bool __condition_variable_atomic_impl_base<Semaphore>::__wait_for(A& object, Predicate pred, std::chrono::duration<Rep, Period> const& rel_time, std::memory_order order)
 {
     return __wait_until(object, pred, details::__semaphore_clock::now() + rel_time, order);
 }
 
-__semaphore_abi inline condition_variable_atomic::condition_variable_atomic()
+template <class Semaphore>
+__semaphore_abi inline __condition_variable_atomic_impl_base<Semaphore>::__condition_variable_atomic_impl_base()
 #ifndef __semaphore_cuda
     : __sem(0), __reversebuffer{0}
 #endif
 {
+}
+
+__semaphore_abi inline condition_variable_atomic::condition_variable_atomic() : __condition_variable_atomic_impl_base()
+{
+
 }
 
 __semaphore_abi inline condition_variable_atomic::~condition_variable_atomic() 

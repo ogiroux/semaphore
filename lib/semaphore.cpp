@@ -213,7 +213,7 @@ __semaphore_abi bool __binary_semaphore_acquire_slow(
 } //details
 
 #ifdef __semaphore_fast_path
-__semaphore_abi void binary_semaphore::__release_slow(count_type old)
+__semaphore_abi void __binary_semaphore_impl_base::__release_slow(count_type old)
 {
     count_type lock = 0;
     do {
@@ -229,7 +229,7 @@ __semaphore_abi void binary_semaphore::__release_slow(count_type old)
 }
 #endif //__semaphore_fast_path
 
-__semaphore_abi void binary_semaphore::__acquire_slow()
+__semaphore_abi void __binary_semaphore_impl_base::__acquire_slow()
 {
     auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
 #ifdef __semaphore_fast_path
@@ -240,7 +240,7 @@ __semaphore_abi void binary_semaphore::__acquire_slow()
     details::__binary_semaphore_acquire_slow(__atom, __ticket, __tocket, __stolen, fn);
 }
 
-bool binary_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) 
+bool __binary_semaphore_impl_base::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) 
 {
     auto const fn = [=] __semaphore_abi (uint32_t old) -> bool { 
 #ifndef __CUDA_ARCH__
@@ -259,7 +259,7 @@ bool binary_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_
 
 #ifndef __semaphore_sem
 
-__semaphore_abi bool counting_semaphore::__fetch_sub_if_slow(counting_semaphore::count_type old)
+__semaphore_abi bool __counting_semaphore_impl_base::__fetch_sub_if_slow(__count_type old)
 {
     do
     {
@@ -272,7 +272,7 @@ __semaphore_abi bool counting_semaphore::__fetch_sub_if_slow(counting_semaphore:
 }
 
 #ifdef __semaphore_fast_path
-void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, counting_semaphore::count_type old, std::memory_order order, semaphore_notify notify)
+void __counting_semaphore_impl_base::__fetch_add_slow(counting_semaphore::count_type term, __count_type old, std::memory_order order, semaphore_notify notify)
 {
     while (1)
     {
@@ -303,13 +303,13 @@ void counting_semaphore::__fetch_add_slow(counting_semaphore::count_type term, c
 }
 #endif //__semaphore_fast_path
 
-bool counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const&) 
+bool __counting_semaphore_impl_base::__acquire_slow_timed(std::chrono::nanoseconds const&) 
 {
   assert(0);
   return false;
 }
 
-__semaphore_abi void counting_semaphore::__acquire_slow()
+__semaphore_abi void __counting_semaphore_impl_base::__acquire_slow()
 {
 
     int old;
@@ -364,12 +364,12 @@ __semaphore_abi size_t __atomic_wait_table_index(void const volatile* ptr)
     return ((uintptr_t)ptr >> 6) & (__atomic_wait_table_entry_count - 1);
 }
 
-__semaphore_abi condition_variable_atomic *condition_variable_atomic::__from_ptr(void const *a)
+__semaphore_abi condition_variable_atomic *__condition_variable_atomic_from_ptr(void const *a)
 {
     return __atomic_wait_table + __atomic_wait_table_index(a);
 }
 
-__semaphore_abi condition_variable_atomic *condition_variable_atomic::__from_ptr(void const volatile *a)
+__semaphore_abi condition_variable_atomic *__condition_variable_atomic_from_ptr(void const volatile *a)
 {
     return __atomic_wait_table + __atomic_wait_table_index(a);
 }

@@ -82,7 +82,11 @@ bool binary_semaphore::try_acquire_for(const std::chrono::duration<Rep, Period>&
     return __acquire_slow_timed(rel_time);
 }
 
-__semaphore_abi inline binary_semaphore::binary_semaphore(count_type desired) : __atom(desired ? 0 : 1), __ticket(0), __tocket(0), __stolen(false)
+__semaphore_abi inline __binary_semaphore_impl_base::__binary_semaphore_impl_base(__count_type desired) : __atom(desired ? 0 : 1), __ticket(0), __tocket(0), __stolen(false)
+{
+}
+
+__semaphore_abi inline binary_semaphore::binary_semaphore(count_type desired) : __binary_semaphore_impl_base(desired)
 {
 }
 

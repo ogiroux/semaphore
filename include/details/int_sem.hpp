@@ -87,7 +87,11 @@ bool counting_semaphore::try_acquire_for(std::chrono::duration<Rep, Period> cons
         return try_acquire_until(details::__semaphore_clock::now() + rel_time);
 }
 
-__semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired) : atom(desired << __shift)
+__semaphore_abi inline __counting_semaphore_impl_base::__counting_semaphore_impl_base(__count_type desired) : atom(desired << __shift)
+{
+}
+
+__semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired) : __counting_semaphore_impl_base(desired)
 {
 }
 
@@ -95,10 +99,10 @@ __semaphore_abi inline counting_semaphore::~counting_semaphore()
 {
 }
 
-__semaphore_abi inline bool counting_semaphore::__fetch_sub_if()
+__semaphore_abi inline bool __counting_semaphore_impl_base::__fetch_sub_if()
 {
 
-    count_type old = 1 << __shift, set = 0;
+    __count_type old = 1 << __shift, set = 0;
     bool retcode = atom.compare_exchange_weak(old, set, std::memory_order_acquire, std::memory_order_relaxed);
     if (__semaphore_expect(!retcode && (old >> __shift) >= 1, 0))
     {
@@ -111,7 +115,7 @@ __semaphore_abi inline bool counting_semaphore::__fetch_sub_if()
     return retcode;
 }
 
-__semaphore_abi inline bool counting_semaphore::__acquire_fast()
+__semaphore_abi inline bool __counting_semaphore_impl_base::__acquire_fast()
 {
 
     auto value = (atom.load(std::memory_order_acquire) >> __shift);
@@ -191,7 +195,7 @@ __semaphore_abi inline bool counting_semaphore::try_acquire()
     return try_acquire_for(std::chrono::nanoseconds(0));
 }
 
-__semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired)
+__semaphore_abi inline __counting_semaphore_impl_base::__counting_semaphore_impl_base(__count_type desired)
     : __frontbuffer { desired << 1 }
 #ifdef __semaphore_back_buffered
     , __backbuffer{ 0 }
@@ -208,6 +212,10 @@ __semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired
     assert(result);
 }
 
+__semaphore_abi inline counting_semaphore::counting_semaphore(count_type desired) : __counting_semaphore_impl_base(desired)
+{
+}
+
 __semaphore_abi inline counting_semaphore::~counting_semaphore()
 {
 
@@ -217,7 +225,7 @@ __semaphore_abi inline counting_semaphore::~counting_semaphore()
     assert(result);
 }
 
-__semaphore_abi inline void counting_semaphore::__acquire_fast()
+__semaphore_abi inline void __counting_semaphore_impl_base::__acquire_fast()
 {
     if (__semaphore_expect(__frontbuffer.load(std::memory_order_relaxed) > 1, 1))
         return;
@@ -229,10 +237,10 @@ __semaphore_abi inline void counting_semaphore::__acquire_fast()
     }
 }
 
-__semaphore_abi inline void counting_semaphore::__acquire_slow() {
+__semaphore_abi inline void __counting_semaphore_impl_base::__acquire_slow() {
     if (__frontbuffer.fetch_sub(2, std::memory_order_acquire) >> 1 > 0)
         return;
-    count_type const result = __semaphore_sem_wait(__semaphore);
+    auto const result = __semaphore_sem_wait(__semaphore);
 #ifdef WIN32
     if (!result)
     {   
@@ -244,11 +252,11 @@ __semaphore_abi inline void counting_semaphore::__acquire_slow() {
     __backfill();
 }
 
-void inline counting_semaphore::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) {
+void inline __counting_semaphore_impl_base::__acquire_slow_timed(std::chrono::nanoseconds const& rel_time) {
     assert(0);
 }
 
-__semaphore_abi inline void counting_semaphore::__backfill()
+__semaphore_abi inline void __counting_semaphore_impl_base::__backfill()
 {
 #ifdef __semaphore_back_buffered
     if (__semaphore_expect(__backbuffer.load(std::memory_order_relaxed) == 0, 1))
