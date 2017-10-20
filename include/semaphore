@@ -38,7 +38,7 @@ namespace experimental
 inline namespace v1
 {
 
-#include "details/impl_base.hpp"
+#include "details/base.hpp"
 
 // 32.10, waiting and notifying functions
 template <class T>
