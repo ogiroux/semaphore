@@ -47,6 +47,8 @@ uint32_t max_gpu_threads() { return 0; }
 unsigned int dev = 0;
 unsigned int cap = 0;
 
+bool use_malloc_managed;
+
 void* allocate_raw_bytes(size_t s) { 
     return malloc(s);
 }

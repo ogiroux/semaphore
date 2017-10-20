@@ -38,6 +38,7 @@ int driver_main(int argc, char const* argv[]) {
 
     static const std::string onlycpu_s = "--cpu", 
     onlygpu_s = "--gpu",
+    usehmm_s = "--hmm",
     onlyscenario_s = "--scenario", 
     onlylock_s = "--lock",
     device_s = "--device";
@@ -48,6 +49,7 @@ int driver_main(int argc, char const* argv[]) {
         else if(argv[i] == device_s) dev = std::stoi(argv[++i]);
         else if(argv[i] == onlyscenario_s) onlyscenario = argv[++i];
         else if(argv[i] == onlylock_s) onlylock = argv[++i];
+        else if(argv[i] == usehmm_s) use_malloc_managed = false;
         else {
             std::cout << "ERROR, unknown argument: " << argv[i] << std::endl; 
             return -1;
