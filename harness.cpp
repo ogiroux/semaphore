@@ -188,33 +188,6 @@ struct work_item_struct {
     }
 };
 
-work_item_struct* allocate_work_item() {
-    work_item_struct* h;
-#ifdef __NVCC__
-    if(cap < 6)
-        cudaHostAlloc(&h, sizeof(work_item_struct), 0);
-    else {
-        cudaMallocManaged(&h, sizeof(work_item_struct));
-        cudaMemAdvise(h, sizeof(work_item_struct), cudaMemAdviseSetPreferredLocation, 0);
-    }
-#else
-    h = (work_item_struct*)malloc(sizeof(work_item_struct));
-#endif
-    new (h) work_item_struct();
-    return h;
-}
-
-void free_work_item(work_item_struct* h) {
-#ifdef __NVCC__
-    if(cap < 6)
-        cudaFreeHost(h);
-    else
-        cudaFree(h);
-#else
-    free(h);
-#endif
-}
-
 double work_item_cpu_cost_in_us = 0.0,
        work_item_gpu_cost_in_us = 0.0;
 
@@ -405,7 +378,7 @@ void run_scenario(F f, uint32_t& count, double& product, uint64_t target_duratio
   auto const target_cpu_duration = gthreads ? gpu_work_item_count * work_item_gpu_cost_in_us : target_duration_in_us;
   auto const cpu_work_item_count = work_item_cpu_cost_in_us ? uint64_t(cthreads && target_cpu_duration ? std::ceil(target_cpu_duration / work_item_cpu_cost_in_us) : 1) : 10000;
 
-  work_item_struct* const wi = allocate_work_item();
+  work_item_struct* const wi = allocate<work_item_struct>();
 
   auto g = [=] __test_abi (uint32_t index, bool is_cpu) -> bool {
     auto const work_item_count = is_cpu ? cpu_work_item_count : gpu_work_item_count;
@@ -430,49 +403,18 @@ void run_scenario(F f, uint32_t& count, double& product, uint64_t target_duratio
   product *= report(*wi, tr, lockname, scenarioname, cthreads, gthreads, contended, cpu_work_item_count, gpu_work_item_count, false);
   count += 1;
 
-  free_work_item(wi);
-}
-
-void* allocate_heap(size_t s) {
-    void* h;
-    #ifdef __NVCC__
-        if(cap < 6)
-            cudaHostAlloc(&h, s, 0);
-        else {
-            cudaMallocManaged(&h, s);
-            cudaMemAdvise(h, s, cudaMemAdviseSetPreferredLocation, 0);
-        }
-    #else
-        h = malloc(s);
-    #endif
-    memset(h, 0, s);
-    return h;
-}
-
-void free_heap(void* h) {
-#ifdef __NVCC__
-    if(cap < 6)
-        cudaFreeHost(h);
-    else
-        cudaFree(h);
-#else
-    free(h);
-#endif
+  deallocate(wi);
 }
 
 template<class T>
 void run_scenario_singlethreaded(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
 
-    void* heap = allocate_heap(sizeof(T)+alignof(T));
-    T* t = new (heap) T;
-
+    auto t = allocate<T>();
     auto f = [=] __test_abi (uint32_t, bool) -> T* {
         return t;
     };
     run_scenario(f, count, product, 0, lockname, "singlethreaded", cthreads, gthreads, false);
-
-    t->~T();
-    free_heap(heap);
+    deallocate(t);
 }
 
 static constexpr int uncontended_count = 1<<20;
@@ -480,7 +422,7 @@ static constexpr int uncontended_count = 1<<20;
 template<class T>
 void run_scenario_uncontended(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
 
-    void* heap = allocate_heap(uncontended_count*sizeof(T) + alignof(T));
+    void* heap = allocate_bytes(uncontended_count*sizeof(T),alignof(T));
     T* t = new (heap) T[uncontended_count];
 
     assert(cthreads + gthreads <= uncontended_count);
@@ -495,52 +437,40 @@ void run_scenario_uncontended(char const* lockname, uint32_t& count, double& pro
 
     for(size_t i = 0; i < uncontended_count; ++i)
         t[i].~T();
-    free_heap(heap);
+    deallocate_bytes(heap);
 }
 
 template<class T>
 void run_scenario_shortest(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
 
-    void* heap = allocate_heap(sizeof(T) + alignof(T));
-    T* t = new (heap) T;
-
+    auto t = allocate<T>();
     auto f = [=] __test_abi (uint32_t, bool) -> T* {
         return t;
     };
     run_scenario(f, count, product, 0, lockname, "shortest", cthreads, gthreads, true);
-
-    t->~T();
-    free_heap(heap);
+    deallocate(t);
 }
 
 template<class T>
 void run_scenario_short(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
 
-    void* heap = allocate_heap(sizeof(T) + alignof(T));
-    T* t = new (heap) T;
-
+    auto t = allocate<T>();
     auto f = [=] __test_abi (uint32_t, bool) -> T* {
         return t;
     };
     run_scenario(f, count, product, 1, lockname, "short", cthreads, gthreads, true);
-
-    t->~T();
-    free_heap(heap);
+    deallocate(t);
 }
 
 template<class T>
 void run_scenario_long(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
   
-    void* heap = allocate_heap(sizeof(T) + alignof(T));
-    T* t = new (heap) T;
-
+    auto t = allocate<T>();
     auto f = [=] __test_abi (uint32_t, bool) -> T* {
         return t;
     };
     run_scenario(f, count, product, 100, lockname, "long", cthreads, gthreads, true);
-
-    t->~T();
-    free_heap(heap);
+    deallocate(t);
 }
 
 template<class T>
@@ -549,10 +479,10 @@ void run_scenario_phaser(char const* lockname, char const* scenarioname, uint32_
     if (!onlyscenario.empty() && onlyscenario != scenarioname)
         return;
 
-    void* heap = allocate_heap(sizeof(T) + alignof(T));
+    void* heap = allocate_bytes(sizeof(T),alignof(T));
     T* t = new (heap) T(cthreads + gthreads);
 
-    work_item_struct* const wi = allocate_work_item();
+    work_item_struct* const wi = allocate<work_item_struct>();
 
     auto g = [=] __test_abi(uint32_t index, bool is_cpu) -> bool {
         auto ret = wi->do_it(index, is_cpu) > 1;
@@ -568,9 +498,8 @@ void run_scenario_phaser(char const* lockname, char const* scenarioname, uint32_
     product *= report(*wi, tr, lockname, scenarioname, cthreads, gthreads, false, wicount, wicount, true);
     count += 1;
 
-    free_work_item(wi);
-    t->~T();
-    free_heap(heap);
+    deallocate(wi);
+    deallocate_bytes(t);
 }
 
 uint32_t onlycpu = ~0u, onlygpu = ~0u;

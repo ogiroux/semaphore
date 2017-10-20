@@ -49,6 +49,7 @@
         "__mutex_base": "cpp",
         "__nullptr": "cpp",
         "ios": "cpp",
-        "climits": "cpp"
+        "climits": "cpp",
+        "__functional_03": "cpp"
     }
 }

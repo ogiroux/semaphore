@@ -106,7 +106,7 @@ struct __counting_semaphore_impl_base {
 template<class Semaphore>
 struct alignas(64) __condition_variable_atomic_impl_base {
 
-  __host__ __device__ __condition_variable_atomic_impl_base();
+  __semaphore_abi __condition_variable_atomic_impl_base();
 
   __semaphore_abi void __notify();
   template <class A, class Predicate>
