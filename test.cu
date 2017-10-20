@@ -48,6 +48,8 @@ using counting_semaphore = cuda::experimental::counting_semaphore;
 using condition_variable_atomic = cuda::experimental::condition_variable_atomic;
 namespace details = cuda::experimental::details;
 
+#include "test.hpp"
+
 using mutex = binary_semaphore_mutex;
 
 template<class F>
