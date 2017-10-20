@@ -1,0 +1,31 @@
+
+#ifndef __CUDA_LAUNCH__
+#define __CUDA_LAUNCH__
+
+#include <future>
+
+namespace cuda {
+namespace experimental {
+inline namespace v1 {
+
+template<class F>
+__global__ void run_gpu_thread(F const* f) {
+  (*f)();
+}
+
+template<class F>
+std::future<void> launch(uint32_t blocks, uint32_t size, F f) {
+
+  auto const ptr = new F(f);
+  return std::async([=]() {
+    run_gpu_thread<F><<<blocks, size>>>(ptr);
+    cudaDeviceSynchronize();
+    delete ptr;
+  });
+}
+}
+}
+}
+
+#endif //__CUDA_LAUNCH__
+
