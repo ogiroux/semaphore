@@ -80,13 +80,19 @@ namespace cuda { namespace experimental { inline namespace v1 {
         }
 
         __device__ static inline void __mme_fence_signal() noexcept {
+#ifdef __CUDA_ARCH__
             __mme_fence_signal_();
+#endif
         }
         __device__ static inline void __mme_fence_sc() noexcept {
+#ifdef __CUDA_ARCH__
             __mme_fence_sc_();
+#endif
         }
         __device__ static inline void __mme_fence() noexcept {
+#ifdef __CUDA_ARCH__
             __mme_fence_();
+#endif
         }
 
         template<size_t N>

@@ -37,9 +37,9 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #elif !defined(__CUDA_ARCH__)
 
-#define __mme_fence_signal_ abort
-#define __mme_fence_sc_ abort
-#define __mme_fence_ abort
+//#define __mme_fence_signal_ abort
+//#define __mme_fence_sc_ abort
+//#define __mme_fence_ abort
 
 #elif __CUDA_ARCH__ < 700
 
@@ -201,6 +201,8 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __mme_xor_acq_rel_64(ptr,old,xorend) asm volatile("atom.xor.acq_rel.sys.b64 %0, [%1], %2;" : "=l"(old) : "l"(ptr), "l"(xorend) : "memory")
 #define __mme_xor_relaxed_64(ptr,old,xorend) asm volatile("atom.xor.relaxed.sys.b64 %0, [%1], %2;" : "=l"(old) : "l"(ptr), "l"(xorend) : "memory")
 
+#ifndef __clang__
+
 #define __mme_load_relaxed_mmio_8_as_32(ptr,ret) __mme_load_relaxed_mmio_8_as_32_(ptr, reinterpret_cast<uint32_t&>(ret))
 #define __mme_store_relaxed_mmio_8_as_32(ptr,desired) __mme_store_relaxed_mmio_8_as_32_(ptr,reinterpret_cast<uint32_t const&>(desired))
 #define __mme_load_relaxed_mmio_16(ptr,ret) __mme_load_relaxed_mmio_16_(ptr,reinterpret_cast<uint16_t&>(ret))
@@ -221,8 +223,6 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __mme_and_relaxed_mmio_64(ptr,old,andend) __mme_and_relaxed_mmio_64_(ptr,reinterpret_cast<uint32_t&>(old),reinterpret_cast<uint32_t const&>(andend))
 #define __mme_or_relaxed_mmio_64(ptr,old,orend) __mme_or_relaxed_mmio_64_(ptr,reinterpret_cast<uint32_t&>(old),reinterpret_cast<uint32_t const&>(orend))
 #define __mme_xor_relaxed_mmio_64(ptr,old,xorend) __mme_xor_relaxed_mmio_64_(ptr,reinterpret_cast<uint32_t&>(old),reinterpret_cast<uint32_t const&>(xorend))
-
-#ifndef __clang__
 
 namespace cuda { namespace experimental { inline namespace v1 { namespace details {
 
@@ -259,7 +259,12 @@ __device__ void __mme_xor_relaxed_mmio_64_(void volatile*, uint32_t&, uint32_t c
 
 #ifndef __has_cuda_nanosleep
 #define __has_cuda_nanosleep
+namespace cuda { namespace experimental { inline namespace v1 { namespace details {
+
 __device__ static inline void __mme_nanosleep(uint32_t) noexcept { }
+
+}}}}
+
 #endif //__has_cuda_nanosleep
 
 //Jesus, this stuff ->
