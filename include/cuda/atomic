@@ -390,16 +390,16 @@ namespace cuda { namespace experimental { inline namespace v1 {
             }
         };
 
-        template<class T>
-        struct __mme_std : __mme<sizeof(T)> {
+        template<class T, class Base = __mme<sizeof(T)>>
+        struct __mme_std : Base {
 
             __device__ static inline T load(T const& value, std::memory_order order) noexcept {
                 T ret = T();
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: load_acquire(value, ret); break;
-                case std::memory_order_relaxed: load_relaxed(value, ret); break;
+                case std::memory_order_acquire: Base::load_acquire(value, ret); break;
+                case std::memory_order_relaxed: Base::load_relaxed(value, ret); break;
                 default: assert(0);
                 }
                 return ret;
@@ -407,9 +407,9 @@ namespace cuda { namespace experimental { inline namespace v1 {
             __device__ static inline void store(T& value, T desired, std::memory_order order) noexcept {
 
                 switch (order) {
-                case std::memory_order_release: store_release(value, desired); break;
+                case std::memory_order_release: Base::store_release(value, desired); break;
                 case std::memory_order_seq_cst: __mme_fence_sc();
-                case std::memory_order_relaxed: store_relaxed(value, desired); break;
+                case std::memory_order_relaxed: Base::store_relaxed(value, desired); break;
                 default: assert(0);
                 }
             }
@@ -419,10 +419,10 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: exch_acquire(value, old, desired); break;
-                case std::memory_order_acq_rel: exch_acq_rel(value, old, desired); break;
-                case std::memory_order_release: exch_release(value, old, desired); break;
-                case std::memory_order_relaxed: exch_relaxed(value, old, desired); break;
+                case std::memory_order_acquire: Base::exch_acquire(value, old, desired); break;
+                case std::memory_order_acq_rel: Base::exch_acq_rel(value, old, desired); break;
+                case std::memory_order_release: Base::exch_release(value, old, desired); break;
+                case std::memory_order_relaxed: Base::exch_relaxed(value, old, desired); break;
                 default: assert(0);
                 }
                 return old;
@@ -433,10 +433,10 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (__stronger_order(success, failure)) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: cas_acquire(value, old, expected, desired); break;
-                case std::memory_order_acq_rel: cas_acq_rel(value, old, expected, desired); break;
-                case std::memory_order_release: cas_release(value, old, expected, desired); break;
-                case std::memory_order_relaxed: cas_relaxed(value, old, expected, desired); break;
+                case std::memory_order_acquire: Base::cas_acquire(value, old, expected, desired); break;
+                case std::memory_order_acq_rel: Base::cas_acq_rel(value, old, expected, desired); break;
+                case std::memory_order_release: Base::cas_release(value, old, expected, desired); break;
+                case std::memory_order_relaxed: Base::cas_relaxed(value, old, expected, desired); break;
                 default: assert(0);
                 }
                 bool ret = old == expected;
@@ -450,10 +450,10 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: add_acquire(value, ret, addend); break;
-                case std::memory_order_acq_rel: add_acq_rel(value, ret, addend); break;
-                case std::memory_order_release: add_release(value, ret, addend); break;
-                case std::memory_order_relaxed: add_relaxed(value, ret, addend); break;
+                case std::memory_order_acquire: Base::add_acquire(value, ret, addend); break;
+                case std::memory_order_acq_rel: Base::add_acq_rel(value, ret, addend); break;
+                case std::memory_order_release: Base::add_release(value, ret, addend); break;
+                case std::memory_order_relaxed: Base::add_relaxed(value, ret, addend); break;
                 default: assert(0);
                 }
                 return ret;
@@ -464,10 +464,10 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: and_acquire(value, ret, andend); break;
-                case std::memory_order_acq_rel: and_acq_rel(value, ret, andend); break;
-                case std::memory_order_release: and_release(value, ret, andend); break;
-                case std::memory_order_relaxed: and_relaxed(value, ret, andend); break;
+                case std::memory_order_acquire: Base::and_acquire(value, ret, andend); break;
+                case std::memory_order_acq_rel: Base::and_acq_rel(value, ret, andend); break;
+                case std::memory_order_release: Base::and_release(value, ret, andend); break;
+                case std::memory_order_relaxed: Base::and_relaxed(value, ret, andend); break;
                 default: assert(0);
                 }
                 return ret;
@@ -478,10 +478,10 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: or_acquire(value, ret, orend); break;
-                case std::memory_order_acq_rel: or_acq_rel(value, ret, orend); break;
-                case std::memory_order_release: or_release(value, ret, orend); break;
-                case std::memory_order_relaxed: or_relaxed(value, ret, orend); break;
+                case std::memory_order_acquire: Base::or_acquire(value, ret, orend); break;
+                case std::memory_order_acq_rel: Base::or_acq_rel(value, ret, orend); break;
+                case std::memory_order_release: Base::or_release(value, ret, orend); break;
+                case std::memory_order_relaxed: Base::or_relaxed(value, ret, orend); break;
                 default: assert(0);
                 }
                 return ret;
@@ -492,10 +492,10 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: xor_acquire(value, ret, xorend); break;
-                case std::memory_order_acq_rel: xor_acq_rel(value, ret, xorend); break;
-                case std::memory_order_release: xor_release(value, ret, xorend); break;
-                case std::memory_order_relaxed: xor_relaxed(value, ret, xorend); break;
+                case std::memory_order_acquire: Base::xor_acquire(value, ret, xorend); break;
+                case std::memory_order_acq_rel: Base::xor_acq_rel(value, ret, xorend); break;
+                case std::memory_order_release: Base::xor_release(value, ret, xorend); break;
+                case std::memory_order_relaxed: Base::xor_relaxed(value, ret, xorend); break;
                 default: assert(0);
                 }
                 return ret;
@@ -506,8 +506,8 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 switch (order) {
                 case std::memory_order_seq_cst: __mme_fence_sc();
                 case std::memory_order_consume:
-                case std::memory_order_acquire: load_mmio(value, ret); __mme_fence(); break;
-                case std::memory_order_relaxed: load_mmio(value, ret); break;
+                case std::memory_order_acquire: Base::load_mmio(value, ret); __mme_fence(); break;
+                case std::memory_order_relaxed: Base::load_mmio(value, ret); break;
                 default: assert(0);
                 }
                 return ret;
@@ -519,7 +519,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                store_mmio(value, desired);
+                Base::store_mmio(value, desired);
             }
             template<typename Q = T, typename std::enable_if<sizeof(Q) != 1 && sizeof(Q) != 2, int>::type = 0>
             __device__ static inline T exchange(T volatile& value, T desired, std::memory_order order) noexcept {
@@ -533,7 +533,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                exch_mmio(value, old, desired);
+                Base::exch_mmio(value, old, desired);
                 switch (order) {
                 case std::memory_order_seq_cst:
                 case std::memory_order_acq_rel:
@@ -558,7 +558,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                cas_mmio(value, old, expected, desired);
+                Base::cas_mmio(value, old, expected, desired);
                 switch (order) {
                 case std::memory_order_seq_cst:
                 case std::memory_order_acq_rel:
@@ -585,7 +585,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                add_mmio(value, ret, addend);
+                Base::add_mmio(value, ret, addend);
                 switch (order) {
                 case std::memory_order_seq_cst:
                 case std::memory_order_acq_rel:
@@ -609,7 +609,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                and_mmio(value, ret, addend);
+                Base::and_mmio(value, ret, addend);
                 switch (order) {
                 case std::memory_order_seq_cst:
                 case std::memory_order_acq_rel:
@@ -633,7 +633,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                or_mmio(value, ret, addend);
+                Base::or_mmio(value, ret, addend);
                 switch (order) {
                 case std::memory_order_seq_cst:
                 case std::memory_order_acq_rel:
@@ -657,7 +657,7 @@ namespace cuda { namespace experimental { inline namespace v1 {
                 case std::memory_order_relaxed: break;
                 default: assert(0);
                 }
-                xor_mmio(value, ret, addend);
+                Base::xor_mmio(value, ret, addend);
                 switch (order) {
                 case std::memory_order_seq_cst:
                 case std::memory_order_acq_rel:
