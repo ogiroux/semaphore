@@ -356,16 +356,18 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
     uint32_t const basetime = 3; // seconds, will get used for the real timer and the kill timer
 
     std::atomic<bool> kill{ true }, killed{ false };
-    std::thread killer([&]() {
-        for (int i = 0; i < 100; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2*100*basetime));
-            if (!kill.load())
-                return;
-        }
-        work_item_state.gpu_keep_going = kAbort;
-        work_item_state.cpu_keep_going = kAbort;
-        killed = true;
-    });
+    std::thread killer;
+    if (onlyloop == 0)
+        killer = std::thread([&]() {
+            for (int i = 0; i < 100; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2*100*basetime));
+                if (!kill.load())
+                    return;
+            }
+            work_item_state.gpu_keep_going = kAbort;
+            work_item_state.cpu_keep_going = kAbort;
+            killed = true;
+        });
 
     thread* const threads = (thread*)malloc(sizeof(thread)*cthreads);
 
@@ -397,16 +399,18 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
         ;
     });
 
-    std::this_thread::sleep_for(std::chrono::seconds(basetime));
-
-    work_item_state.gpu_keep_going = kStop;
-    work_item_state.cpu_keep_going = kStop;
+    if(onlyloop == 0) {
+        std::this_thread::sleep_for(std::chrono::seconds(basetime));
+        work_item_state.gpu_keep_going = kStop;
+        work_item_state.cpu_keep_going = kStop;
+    }
     for (uint32_t c = 0; c < cthreads; ++c)
         threads[c].join();
     stop_gpu_threads(a);
 
     kill = false;
-    killer.join();
+    if (killer.joinable())
+        killer.join();
     if (killed)
         std::cout << "KILLED" << std::endl;
 
