@@ -30,6 +30,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #warning "Use of all warp threads is TOO iffy without CUDA support for compute_70 or above. Will run 1 thread per warp."
 #endif
 
+#include <sys/mman.h>
 #include <cuda/launch>
 #include <cuda/atomic>
 #include <cuda/semaphore>
@@ -66,7 +67,7 @@ uint32_t max_block_count = 0;
 
 void* allocate_raw_bytes(size_t s, bool force = false) { 
     void* ptr = nullptr;
-#ifdef __NVCC__
+#ifdef __CUDACC__
     if(use_malloc_managed || force) {
         auto const ret = cap < 6 ? cudaHostAlloc(&ptr, s, 0) : cudaMallocManaged(&ptr, s);
         assert(ret == cudaSuccess);
@@ -75,18 +76,25 @@ void* allocate_raw_bytes(size_t s, bool force = false) {
     }
     else
 #endif
-        ptr = malloc(s);
+    {
+        ptr = mmap(0, s, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+        if(ptr == MAP_FAILED) {
+            ptr = nullptr;
+        }
+    }
     assert(ptr != nullptr);
     return ptr;
 }
 
 void deallocate_raw_bytes(void* ptr, bool force = false) {
-#ifdef __NVCC__
+#ifdef __CUDACC__
     if(use_malloc_managed || force)
         cudaFree(ptr);
     else
 #endif
-        free(ptr);
+    {
+        // Leak. Oops.
+    }
 }
 
 template<class F>

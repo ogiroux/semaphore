@@ -31,7 +31,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cstdint>
 
-#if !defined(__NVCC__)
+#if !defined(__CUDACC__)
 
 #error "This file defines CUDA operations; you must use CUDA to use it."
 
@@ -272,7 +272,7 @@ __device__ void __mme_xor_relaxed_mmio_64_(void volatile*, uint32_t&, uint32_t c
 
 #define __has_cuda_nanosleep
 
-#endif // __NVCC__
+#endif // __CUDACC__
 
 #define __has_cuda_atomic
 

@@ -372,7 +372,7 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
     work_item_state.gpu_keep_going = kRun;
     work_item_state.cpu_keep_going = kRun;
 
-#ifdef __NVCC__
+#ifdef __CUDACC__
     if(use_malloc_managed && cap >= 6)
       cudaMemAdvise(&work_item_state, sizeof(work_item_state), cudaMemAdviseSetPreferredLocation, 0);
 #endif
