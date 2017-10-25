@@ -127,28 +127,6 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __mme_xor_acq_rel_64(ptr,old,xorend) asm volatile("membar.sys; atom.xor" DOTSYS ".b64 %0, [%1], %2; membar.sys;" : "=l"(old) : "l"(ptr), "l"(xorend) : "memory")
 #define __mme_xor_relaxed_64(ptr,old,xorend) asm volatile("atom.xor" DOTSYS ".b64 %0, [%1], %2;" : "=l"(old) : "l"(ptr), "l"(xorend) : "memory")
 
-//Jesus, this stuff ->
-#define __mme_load_relaxed_mmio_8_as_32(ptr,ret)            __mme_load_relaxed_32(ptr,ret)
-#define __mme_store_relaxed_mmio_8_as_32(ptr,desired)       __mme_store_relaxed_32(ptr,desired)
-#define __mme_load_relaxed_mmio_16(ptr,ret)                 __mme_load_relaxed_16(ptr,ret)
-#define __mme_store_relaxed_mmio_16(ptr,desired)            __mme_store_relaxed_16(ptr,desired)
-#define __mme_load_relaxed_mmio_32(ptr,ret)                 __mme_load_relaxed_32(ptr,ret)
-#define __mme_store_relaxed_mmio_32(ptr,desired)            __mme_store_relaxed_32(ptr,desired)
-#define __mme_exch_relaxed_mmio_32(ptr,old,desired)         __mme_exch_relaxed_32(ptr,old,desired)
-#define __mme_cas_relaxed_mmio_32(ptr,old,expected,desired) __mme_cas_relaxed_32(ptr,old,expected,desired)
-#define __mme_add_relaxed_mmio_32(ptr,old,addend)           __mme_add_relaxed_32(ptr,old,addend)
-#define __mme_and_relaxed_mmio_32(ptr,old,andend)           __mme_and_relaxed_32(ptr,old,andend)
-#define __mme_or_relaxed_mmio_32(ptr,old,orend)             __mme_or_relaxed_32(ptr,old,orend)
-#define __mme_xor_relaxed_mmio_32(ptr,old,xorend)           __mme_xor_relaxed_32(ptr,old,xorend)
-#define __mme_load_relaxed_mmio_64(ptr,ret)                 __mme_load_relaxed_64(ptr,ret)
-#define __mme_store_relaxed_mmio_64(ptr,desired)            __mme_store_relaxed_64(ptr,desired)
-#define __mme_exch_relaxed_mmio_64(ptr,old,desired)         __mme_exch_relaxed_64(ptr,old,desired)
-#define __mme_cas_relaxed_mmio_64(ptr,old,expected,desired) __mme_cas_relaxed_64(ptr,old,expected,desired)
-#define __mme_add_relaxed_mmio_64(ptr,old,addend)           __mme_add_relaxed_64(ptr,old,addend)
-#define __mme_and_relaxed_mmio_64(ptr,old,andend)           __mme_and_relaxed_64(ptr,old,andend)
-#define __mme_or_relaxed_mmio_64(ptr,old,orend)             __mme_or_relaxed_64(ptr,old,orend)
-#define __mme_xor_relaxed_mmio_64(ptr,old,xorend)           __mme_xor_relaxed_64(ptr,old,xorend)
-
 #else // __CUDA_ARCH__ >= 700
 
 #define __mme_fence_signal_() asm volatile("":::"memory")
@@ -244,6 +222,8 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __mme_or_relaxed_mmio_64(ptr,old,orend) __mme_or_relaxed_mmio_64_(ptr,reinterpret_cast<uint32_t&>(old),reinterpret_cast<uint32_t const&>(orend))
 #define __mme_xor_relaxed_mmio_64(ptr,old,xorend) __mme_xor_relaxed_mmio_64_(ptr,reinterpret_cast<uint32_t&>(old),reinterpret_cast<uint32_t const&>(xorend))
 
+#ifndef __clang__
+
 namespace cuda { namespace experimental { inline namespace v1 { namespace details {
 
 __device__ void __mme_nanosleep(uint32_t) noexcept;
@@ -268,11 +248,44 @@ __device__ void __mme_and_relaxed_mmio_64_(void volatile*, uint32_t&, uint32_t c
 __device__ void __mme_or_relaxed_mmio_64_(void volatile*, uint32_t&, uint32_t const&) noexcept;
 __device__ void __mme_xor_relaxed_mmio_64_(void volatile*, uint32_t&, uint32_t const&) noexcept;
 
-}}}}
-
+#define __has_cuda_mmio
 #define __has_cuda_nanosleep
 
+}}}}
+
+#endif //__clang__
+
 #endif // __CUDACC__
+
+#ifndef __has_cuda_nanosleep
+#define __has_cuda_nanosleep
+__device__ static inline void __mme_nanosleep(uint32_t) noexcept { }
+#endif //__has_cuda_nanosleep
+
+//Jesus, this stuff ->
+#ifndef __has_cuda_mmio
+#define __has_cuda_mmio
+#define __mme_load_relaxed_mmio_8_as_32(ptr,ret)            __mme_load_relaxed_32(ptr,ret)
+#define __mme_store_relaxed_mmio_8_as_32(ptr,desired)       __mme_store_relaxed_32(ptr,desired)
+#define __mme_load_relaxed_mmio_16(ptr,ret)                 __mme_load_relaxed_16(ptr,ret)
+#define __mme_store_relaxed_mmio_16(ptr,desired)            __mme_store_relaxed_16(ptr,desired)
+#define __mme_load_relaxed_mmio_32(ptr,ret)                 __mme_load_relaxed_32(ptr,ret)
+#define __mme_store_relaxed_mmio_32(ptr,desired)            __mme_store_relaxed_32(ptr,desired)
+#define __mme_exch_relaxed_mmio_32(ptr,old,desired)         __mme_exch_relaxed_32(ptr,old,desired)
+#define __mme_cas_relaxed_mmio_32(ptr,old,expected,desired) __mme_cas_relaxed_32(ptr,old,expected,desired)
+#define __mme_add_relaxed_mmio_32(ptr,old,addend)           __mme_add_relaxed_32(ptr,old,addend)
+#define __mme_and_relaxed_mmio_32(ptr,old,andend)           __mme_and_relaxed_32(ptr,old,andend)
+#define __mme_or_relaxed_mmio_32(ptr,old,orend)             __mme_or_relaxed_32(ptr,old,orend)
+#define __mme_xor_relaxed_mmio_32(ptr,old,xorend)           __mme_xor_relaxed_32(ptr,old,xorend)
+#define __mme_load_relaxed_mmio_64(ptr,ret)                 __mme_load_relaxed_64(ptr,ret)
+#define __mme_store_relaxed_mmio_64(ptr,desired)            __mme_store_relaxed_64(ptr,desired)
+#define __mme_exch_relaxed_mmio_64(ptr,old,desired)         __mme_exch_relaxed_64(ptr,old,desired)
+#define __mme_cas_relaxed_mmio_64(ptr,old,expected,desired) __mme_cas_relaxed_64(ptr,old,expected,desired)
+#define __mme_add_relaxed_mmio_64(ptr,old,addend)           __mme_add_relaxed_64(ptr,old,addend)
+#define __mme_and_relaxed_mmio_64(ptr,old,andend)           __mme_and_relaxed_64(ptr,old,andend)
+#define __mme_or_relaxed_mmio_64(ptr,old,orend)             __mme_or_relaxed_64(ptr,old,orend)
+#define __mme_xor_relaxed_mmio_64(ptr,old,xorend)           __mme_xor_relaxed_64(ptr,old,xorend)
+#endif //__has_cuda_mmio
 
 #define __has_cuda_atomic
 
