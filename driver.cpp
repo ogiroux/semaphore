@@ -41,11 +41,13 @@ int driver_main(int argc, char const* argv[]) {
     usehmm_s = "--hmm",
     onlyscenario_s = "--scenario", 
     onlylock_s = "--lock",
-    device_s = "--device";
+    device_s = "--device",
+    onlyloop_s = "--loop";
 
     for(int i = 1; i < argc; ++i)
         if(argv[i] == onlygpu_s) onlygpu = std::stoi(argv[++i]);
         else if(argv[i] == onlycpu_s) onlycpu = std::stoi(argv[++i]);
+        else if(argv[i] == onlyloop_s) onlyloop = std::stoi(argv[++i]);
         else if(argv[i] == device_s) dev = std::stoi(argv[++i]);
         else if(argv[i] == onlyscenario_s) onlyscenario = argv[++i];
         else if(argv[i] == onlylock_s) onlylock = argv[++i];

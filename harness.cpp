@@ -163,26 +163,41 @@ struct time_record {
 static constexpr uint32_t MAX_CPU_THREADS = 1024;
 static constexpr uint32_t MAX_GPU_THREADS = 1024*160;
 
+uint64_t onlyloop = 0;
+
+enum runstate : int {
+    kAbort = 0,
+    kStop = 1,
+    kRun = 2
+};
+
 struct work_item_struct {
 
-    atomic<int> cpu_keep_going                    = ATOMIC_VAR_INIT(0);
+    atomic<runstate> cpu_keep_going               = ATOMIC_VAR_INIT(kAbort);
     unsigned char pad3[4096]                      = {0};
-    atomic<int> gpu_keep_going                    = ATOMIC_VAR_INIT(0);
+    atomic<runstate> gpu_keep_going               = ATOMIC_VAR_INIT(kAbort);
     unsigned char pad35[4096]                     = {0};
     atomic<uint64_t> cpu_count[MAX_CPU_THREADS]   = {ATOMIC_VAR_INIT(0)};
     unsigned char pad4[4096]                      = {0};
     atomic<uint64_t> gpu_count[MAX_GPU_THREADS]   = {ATOMIC_VAR_INIT(0)};
     unsigned char pad5[4096]                      = {0};
 
-    __test_abi int do_it(uint32_t index, bool is_cpu) {
+    __test_abi runstate do_it(uint32_t index, bool is_cpu) {
 
+        auto const loop = onlyloop;
         if (is_cpu) {
-            cpu_count[index].fetch_add(1, std::memory_order_relaxed);
-            return cpu_keep_going.load(std::memory_order_relaxed);
+            auto const temp = cpu_count[index].fetch_add(1, std::memory_order_relaxed);
+            if(loop != 0 && temp >= loop)
+                return kStop;
+            else
+                return cpu_keep_going.load(std::memory_order_relaxed);
         }
         else {
-            gpu_count[index].fetch_add(1, std::memory_order_relaxed);
-            return gpu_keep_going.load(std::memory_order_relaxed);
+            auto const temp = gpu_count[index].fetch_add(1, std::memory_order_relaxed);
+            if(loop != 0 && temp >= loop)
+                return kStop;
+            else
+                return gpu_keep_going.load(std::memory_order_relaxed);
         }
     
     }
@@ -306,15 +321,15 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
             if (!kill.load())
                 return;
         }
-        work_item_state.gpu_keep_going = 0;
-        work_item_state.cpu_keep_going = 0;
+        work_item_state.gpu_keep_going = kAbort;
+        work_item_state.cpu_keep_going = kAbort;
         killed = true;
     });
 
     thread* const threads = (thread*)malloc(sizeof(thread)*cthreads);
 
-    work_item_state.gpu_keep_going = 2;
-    work_item_state.cpu_keep_going = 2;
+    work_item_state.gpu_keep_going = kRun;
+    work_item_state.cpu_keep_going = kRun;
 
 #ifdef __NVCC__
     if(cap >= 6)
@@ -343,8 +358,8 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
 
     std::this_thread::sleep_for(std::chrono::seconds(basetime));
 
-    work_item_state.gpu_keep_going = 1;
-    work_item_state.cpu_keep_going = 1;
+    work_item_state.gpu_keep_going = kStop;
+    work_item_state.cpu_keep_going = kStop;
     for (uint32_t c = 0; c < cthreads; ++c)
         threads[c].join();
     stop_gpu_threads(a);
