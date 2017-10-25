@@ -202,28 +202,30 @@ struct time_record {
 static constexpr uint32_t MAX_CPU_THREADS = 1024;
 static constexpr uint32_t MAX_GPU_THREADS = 1024*160;
 
-uint64_t onlyloop = 0;
-
 enum runstate : int {
     kAbort = 0,
     kStop = 1,
     kRun = 2
 };
 
+uint64_t onlyloop;
+
 struct work_item_struct {
 
-    atomic<runstate> cpu_keep_going               = ATOMIC_VAR_INIT(kAbort);
+    atomic<int> cpu_keep_going                    = ATOMIC_VAR_INIT(kAbort);
     unsigned char pad3[4096]                      = {0};
-    atomic<runstate> gpu_keep_going               = ATOMIC_VAR_INIT(kAbort);
+    atomic<int> gpu_keep_going                    = ATOMIC_VAR_INIT(kAbort);
     unsigned char pad35[4096]                     = {0};
     atomic<uint64_t> cpu_count[MAX_CPU_THREADS]   = {ATOMIC_VAR_INIT(0)};
     unsigned char pad4[4096]                      = {0};
     atomic<uint64_t> gpu_count[MAX_GPU_THREADS]   = {ATOMIC_VAR_INIT(0)};
     unsigned char pad5[4096]                      = {0};
 
-    __test_abi runstate do_it(uint32_t index, bool is_cpu) {
+    uint64_t onlyloop_ = onlyloop;
 
-        auto const loop = onlyloop;
+    __test_abi int do_it(uint32_t index, bool is_cpu) {
+
+        auto const loop = onlyloop_;
         if (is_cpu) {
             auto const temp = cpu_count[index].fetch_add(1, std::memory_order_relaxed);
             if(loop != 0 && temp >= loop)
