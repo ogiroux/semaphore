@@ -52,30 +52,8 @@ bool use_malloc_managed;
 void* allocate_raw_bytes(size_t s) { 
     return malloc(s);
 }
-void* allocate_bytes(size_t s, size_t a) { 
-    a = std::max(a, sizeof(size_t));
-    unsigned char* ptr = (unsigned char*)allocate_raw_bytes(a + s + sizeof(size_t));
-    unsigned char* target = ptr + sizeof(size_t);
-    target += a - uintptr_t(target) % a;
-    *(size_t*)(target - sizeof(size_t)) = target - ptr;
-    return target;
-}
-template<class T, class... Args>
-T* allocate(Args... args) {
-    return new (allocate_bytes(sizeof(T), alignof(T))) T(std::forward<Args>(args)...);
-}
 void deallocate_raw_bytes(void* ptr) {
     free(ptr); 
-}
-void deallocate_bytes(void* ptr) { 
-    unsigned char* target = (unsigned char*)ptr;
-    target -= *(size_t*)(target - sizeof(size_t));
-    deallocate_raw_bytes(target); 
-}
-template<class T>
-void deallocate(T* ptr) {
-    ptr->~T();
-    deallocate_bytes(ptr);
 }
 
 #include "driver.cpp"

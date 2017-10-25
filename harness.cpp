@@ -49,6 +49,45 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
   #define __has_include(x) 0
 #endif
 
+void* allocate_bytes(size_t s, size_t a) { 
+    a = std::max(a, sizeof(size_t));
+    unsigned char* ptr = (unsigned char*)allocate_raw_bytes(a + s + sizeof(size_t));
+    unsigned char* target = ptr + sizeof(size_t);
+    target += a - uintptr_t(target) % a;
+    *(size_t*)(target - sizeof(size_t)) = target - ptr;
+    return target;
+}
+template<class T, class... Args>
+T* allocate(Args... args) {
+    return new (allocate_bytes(sizeof(T), alignof(T))) T(std::forward<Args>(args)...);
+}
+template<class T, class... Args>
+T* allocate_array(size_t n, Args... args) {
+    T* ptr = (T*)allocate_bytes(n*sizeof(T), alignof(T));
+    std::for_each(ptr, ptr+n, [&](T& ref) {
+        new (&ref) T(std::forward<Args>(args)...);
+    });
+    return ptr;
+}
+
+void deallocate_bytes(void* ptr) { 
+    unsigned char* target = (unsigned char*)ptr;
+    target -= *(size_t*)(target - sizeof(size_t));
+    deallocate_raw_bytes(target); 
+}
+template<class T>
+void deallocate(T* ptr) {
+    ptr->~T();
+    deallocate_bytes(ptr);
+}
+template<class T>
+void deallocate_array(T* ptr, size_t n) {
+    std::for_each(ptr, ptr+n, [](T& ref) {
+        ref.~T();
+    });
+    deallocate_bytes(ptr);
+}
+
 #if defined(__linux__) || defined(__APPLE__)
   #include <unistd.h>
   #include <cstring>
@@ -332,7 +371,7 @@ time_record run_core(work_item_struct& work_item_state, F f, uint32_t cthreads, 
     work_item_state.cpu_keep_going = kRun;
 
 #ifdef __NVCC__
-    if(cap >= 6)
+    if(use_malloc_managed && cap >= 6)
       cudaMemAdvise(&work_item_state, sizeof(work_item_state), cudaMemAdviseSetPreferredLocation, 0);
 #endif
 
@@ -437,9 +476,7 @@ static constexpr int uncontended_count = 1<<20;
 template<class T>
 void run_scenario_uncontended(char const* lockname, uint32_t& count, double& product, uint32_t cthreads, uint32_t gthreads) {
 
-    void* heap = allocate_bytes(uncontended_count*sizeof(T),alignof(T));
-    T* t = new (heap) T[uncontended_count];
-
+    T* const t = allocate_array<T>(uncontended_count);
     assert(cthreads + gthreads <= uncontended_count);
     auto f = [=] __test_abi (uint32_t index, bool is_cpu) -> T* {
         if (is_cpu)
@@ -449,10 +486,7 @@ void run_scenario_uncontended(char const* lockname, uint32_t& count, double& pro
     };
 
     run_scenario(f, count, product, 0, lockname, "uncontended", cthreads, gthreads, false);
-
-    for(size_t i = 0; i < uncontended_count; ++i)
-        t[i].~T();
-    deallocate_bytes(heap);
+    deallocate_array(t, uncontended_count);
 }
 
 template<class T>
@@ -494,9 +528,7 @@ void run_scenario_phaser(char const* lockname, char const* scenarioname, uint32_
     if (!onlyscenario.empty() && onlyscenario != scenarioname)
         return;
 
-    void* heap = allocate_bytes(sizeof(T),alignof(T));
-    T* t = new (heap) T(cthreads + gthreads);
-
+    T* const t = allocate<T>(cthreads + gthreads);
     work_item_struct* const wi = allocate<work_item_struct>();
 
     auto g = [=] __test_abi(uint32_t index, bool is_cpu) -> bool {
@@ -514,7 +546,7 @@ void run_scenario_phaser(char const* lockname, char const* scenarioname, uint32_
     count += 1;
 
     deallocate(wi);
-    deallocate_bytes(t);
+    deallocate(t);
 }
 
 uint32_t onlycpu = ~0u, onlygpu = ~0u;

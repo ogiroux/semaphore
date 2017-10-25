@@ -64,50 +64,29 @@ uint32_t cap = 0;
 bool use_malloc_managed = true;
 uint32_t max_block_count = 0;
 
-void* allocate_raw_bytes(size_t s) { 
+void* allocate_raw_bytes(size_t s, bool force = false) { 
     void* ptr = nullptr;
 #ifdef __NVCC__
-    if(use_malloc_managed) {
+    if(use_malloc_managed || force) {
         auto const ret = cap < 6 ? cudaHostAlloc(&ptr, s, 0) : cudaMallocManaged(&ptr, s);
-        assert(ptr != nullptr && ret == cudaSuccess);
+        assert(ret == cudaSuccess);
         if(cap >= 6)
             cudaMemAdvise(ptr, s, cudaMemAdviseSetPreferredLocation, 0);
-        goto out;
     }
+    else
 #endif
-    ptr = malloc(s);
-out:
+        ptr = malloc(s);
+    assert(ptr != nullptr);
     return ptr;
 }
-void* allocate_bytes(size_t s, size_t a) { 
-    a = std::max(a, sizeof(size_t));
-    unsigned char* ptr = (unsigned char*)allocate_raw_bytes(a + s + sizeof(size_t));
-    unsigned char* target = ptr + sizeof(size_t);
-    target += a - uintptr_t(target) % a;
-    *(size_t*)(target - sizeof(size_t)) = target - ptr;
-    return target;
-}
-template<class T, class... Args>
-T* allocate(Args... args) {
-    return new (allocate_bytes(sizeof(T), alignof(T))) T(std::forward<Args>(args)...);
-}
-void deallocate_raw_bytes(void* ptr) {
+
+void deallocate_raw_bytes(void* ptr, bool force = false) {
 #ifdef __NVCC__
-    if(use_malloc_managed)
+    if(use_malloc_managed || force)
         cudaFree(ptr);
     else
 #endif
         free(ptr);
-}
-void deallocate_bytes(void* ptr) { 
-    unsigned char* target = (unsigned char*)ptr;
-    target -= *(size_t*)(target - sizeof(size_t));
-    deallocate_raw_bytes(target); 
-}
-template<class T>
-void deallocate(T* ptr) {
-    ptr->~T();
-    deallocate_bytes(ptr);
 }
 
 template<class F>
@@ -119,7 +98,8 @@ F* start_gpu_threads(uint32_t count, F f) {
     uint32_t const blocks = (std::min)(count, max_block_count);
     uint32_t const threads_per_block = (count / blocks) + (count % blocks ? 1 : 0);
 
-    auto const fptr = allocate<F>(f);
+    auto const fptr = new (allocate_raw_bytes(sizeof(F))) F(f);
+    assert(uintptr_t(fptr) % alignof(F) == 0);
     run_gpu_thread<F><<<blocks, threads_per_block>>>(count, threads_per_block, fptr);
 
     return fptr;
@@ -129,8 +109,10 @@ template<class F>
 void stop_gpu_threads(F* fptr) {
     if(nullptr == fptr)
         return;
-    cudaDeviceSynchronize();
-    deallocate(fptr);
+    auto const ret = cudaDeviceSynchronize();
+    assert(ret == cudaSuccess);
+    fptr->~F();
+    deallocate_raw_bytes(fptr);
 }
 
 uint32_t dev = 0;
