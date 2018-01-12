@@ -26,23 +26,12 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#ifndef DRIVER_CPP
+#define DRIVER_CPP
+
 #include "harness.cpp"
 
 #include "test.hpp"
-
-struct atomic_flag_lock {
-
-  void lock() {
-     while(!flag.test_and_set(std::memory_order_acquire))
-      ;
-  }
-  void unlock() {
-     flag.clear(std::memory_order_release);
-  }
-
-  std::atomic_flag flag = ATOMIC_VAR_INIT(false);
-};
-
 
 template<class F>
 int driver_main(int argc, char const* argv[], F && f) {
@@ -79,8 +68,6 @@ int driver_main(int argc, char const* argv[], F && f) {
     uint32_t count = 0; 
     double product = 1.0;
 
-    run_and_report_mutex_scenarios(atomic_flag_lock, count, product);
-
     run_and_report_mutex_scenarios(mutex, count, product);
     run_and_report_mutex_scenarios(binary_semaphore_mutex, count, product);
     if(!onlylock.empty()) {
@@ -100,3 +87,5 @@ int driver_main(int argc, char const* argv[], F && f) {
     std::cout << "== total : " << std::fixed << std::setprecision(0) << 10000/std::pow(product, 1.0/count) << " lockmarks ==" << std::endl;
     return 0;
 }
+
+#endif //DRIVER_CPP

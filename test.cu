@@ -142,7 +142,13 @@ unsigned int max_gpu_threads() {
 
 #include "driver.cpp"
 
+#ifndef TEST_NO_MAIN
+
 int main(int argc, char const* argv[]) {
 
-    return driver_main(argc, argv);
+    auto f = [](uint32_t&,double&) { };
+
+    return driver_main(argc, argv, f);
 }
+
+#endif
