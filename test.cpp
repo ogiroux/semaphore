@@ -60,5 +60,7 @@ void deallocate_raw_bytes(void* ptr) {
 
 int main(int argc, char const* argv[]) {
 
-    return driver_main(argc, argv);
+    auto f = [](uint32_t&,double&) { };
+
+    return driver_main(argc, argv, f);
 }
